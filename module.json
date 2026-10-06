@@ -1,0 +1,21 @@
+{
+  "id": "dm-screen",
+  "title": "Ширма",
+  "description": "Планшет в ширме мастера видит только стол и тот кадр, который показал мастер.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "13"
+  },
+  "authors": [
+    {
+      "name": "Volkula"
+    }
+  ],
+  "esmodules": ["scripts/module.mjs"],
+  "styles": ["styles/screen.css"],
+  "socket": true,
+  "url": "https://github.com/Volkula/dm-screen",
+  "manifest": "https://github.com/Volkula/dm-screen/releases/latest/download/module.json",
+  "download": "https://github.com/Volkula/dm-screen/releases/latest/download/module.zip"
+}

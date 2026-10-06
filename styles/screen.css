@@ -1,0 +1,30 @@
+body.dm-screen #ui-left,
+body.dm-screen #ui-right,
+body.dm-screen #ui-top,
+body.dm-screen #ui-bottom,
+body.dm-screen #hotbar,
+body.dm-screen #players,
+body.dm-screen #navigation,
+body.dm-screen #controls,
+body.dm-screen #logo,
+body.dm-screen #pause,
+body.dm-screen .notification-pip {
+  display: none !important;
+}
+
+body.dm-screen #board {
+  cursor: default;
+}
+
+#dm-screen-blackout {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 100000;
+  pointer-events: all;
+}
+
+body.dm-screen-blackout #dm-screen-blackout {
+  display: block;
+}
