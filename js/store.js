@@ -40,18 +40,122 @@
     });
   }
 
-  function blankPage(name) {
-    return {
+  function blankPage(name, kind) {
+    const page = {
       id: uid(),
       name: name,
+      kind: kind || "free",
+      editKind: kind || "free",
       html: '<section class="cover"><h1>' + name + '</h1><p>Картинка, текст, что угодно.</p></section>',
       css: [
         ".cover{box-sizing:border-box;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:56px;",
         "background:#1a1612 center/cover no-repeat;color:#f3ead8;font-family:Georgia,serif;}",
         ".cover h1{margin:0;font-size:76px;font-weight:500;line-height:1.05;}",
         ".cover p{margin:12px 0 0;font-size:28px;color:#d7c4a3;}"
-      ].join("")
+      ].join(""),
+      scene: null
     };
+    if (page.kind !== "free") {
+      page.scene = emptyScene(page.kind);
+      page.scenes = {};
+      page.scenes[page.kind] = page.scene;
+    }
+    return page;
+  }
+
+  function actor(name, init, side) {
+    return {
+      id: uid(),
+      name: name,
+      init: init,
+      side: side,
+      portrait: "",
+      picture: "",
+      weapon: "",
+      damage: "",
+      hp: 0,
+      hpMax: 0,
+      boss: false,
+      statuses: [],
+      actions: side === "player" ? 1 : 0,
+      dead: false
+    };
+  }
+
+  function emptyScene(kind) {
+    if (kind === "talk") {
+      return {
+        npcName: "Непись",
+        font: "Georgia, serif",
+        background: "",
+        portrait: "",
+        lines: ["Первая реплика."],
+        line: 0,
+        items: [],
+        shopOpen: false
+      };
+    }
+    const actors = [
+      actor("Player 1", 20, "player"),
+      actor("Active NPC", 16, "npc"),
+      actor("npc 2", 15, "npc"),
+      actor("Player 2", 12, "player"),
+      actor("npc 3", 10, "npc"),
+      actor("npc 4", 10, "npc"),
+      actor("npc 5", 10, "npc"),
+      actor("player 3", 8, "player"),
+      actor("player 4", 6, "player")
+    ];
+    return {
+      background: "",
+      log: "",
+      activeId: actors[1].id,
+      actors: actors
+    };
+  }
+
+  function defaultCodex() {
+    return {
+      npcs: [],
+      goods: [
+        { id: uid(), name: "Рюкзак", price: "2 зм", note: "", image: "" },
+        { id: uid(), name: "Спальник", price: "1 зм", note: "", image: "" },
+        { id: uid(), name: "Одеяло", price: "5 см", note: "", image: "" },
+        { id: uid(), name: "Палатка", price: "2 зм", note: "", image: "" },
+        { id: uid(), name: "Рационы, день", price: "5 см", note: "", image: "" },
+        { id: uid(), name: "Бурдюк", price: "2 см", note: "", image: "" },
+        { id: uid(), name: "Факел", price: "1 мм", note: "", image: "" },
+        { id: uid(), name: "Фонарь", price: "5 зм", note: "", image: "" },
+        { id: uid(), name: "Масло, фляга", price: "1 см", note: "", image: "" },
+        { id: uid(), name: "Верёвка, 15 м", price: "1 зм", note: "", image: "" },
+        { id: uid(), name: "Трутница", price: "5 см", note: "", image: "" },
+        { id: uid(), name: "Зелье лечения", price: "50 зм", note: "", image: "" },
+        { id: uid(), name: "Кинжал", price: "2 зм", note: "", image: "" },
+        { id: uid(), name: "Короткий меч", price: "10 зм", note: "", image: "" },
+        { id: uid(), name: "Длинный меч", price: "15 зм", note: "", image: "" },
+        { id: uid(), name: "Боевой топор", price: "10 зм", note: "", image: "" },
+        { id: uid(), name: "Короткий лук", price: "25 зм", note: "", image: "" },
+        { id: uid(), name: "Стрелы, 20", price: "1 зм", note: "", image: "" },
+        { id: uid(), name: "Кожаный доспех", price: "10 зм", note: "", image: "" },
+        { id: uid(), name: "Кольчуга", price: "75 зм", note: "", image: "" },
+        { id: uid(), name: "Щит", price: "10 зм", note: "", image: "" }
+      ],
+      coins: [
+        { id: uid(), name: "Медная", code: "мм", copper: 1 },
+        { id: uid(), name: "Серебряная", code: "см", copper: 10 },
+        { id: uid(), name: "Электрумовая", code: "эм", copper: 50 },
+        { id: uid(), name: "Золотая", code: "зм", copper: 100 },
+        { id: uid(), name: "Платиновая", code: "пм", copper: 1000 }
+      ]
+    };
+  }
+
+  function ensureCodex(project) {
+    if (!project.codex) project.codex = defaultCodex();
+    project.codex.npcs = project.codex.npcs || [];
+    project.codex.goods = project.codex.goods || [];
+    project.codex.coins = project.codex.coins || [];
+    return project.codex;
   }
 
   function createProject() {
@@ -61,7 +165,9 @@
       stage: { width: STAGE.width, height: STAGE.height },
       password: null,
       pages: [page],
-      activePageId: page.id
+      activePageId: page.id,
+      shownPageId: page.id,
+      codex: defaultCodex()
     };
   }
 
@@ -88,7 +194,9 @@
       version: 1,
       stage: project.stage,
       pages: project.pages,
-      activePageId: project.activePageId
+      activePageId: project.activePageId,
+      shownPageId: project.shownPageId,
+      codex: project.codex || null
     };
   }
 
@@ -104,12 +212,21 @@
       return {
         id: page.id || uid(),
         name: page.name || "Сцена",
+        kind: page.kind || "free",
+        editKind: page.editKind || page.kind || "free",
         html: page.html || "",
-        css: page.css || ""
+        css: page.css || "",
+        paint: page.paint || "",
+        scene: page.scene || null,
+        scenes: page.scenes || null
       };
     });
     const known = project.pages.some(function (page) { return page.id === data.activePageId; });
     project.activePageId = known ? data.activePageId : project.pages[0].id;
+    const shown = project.pages.some(function (page) { return page.id === data.shownPageId; });
+    project.shownPageId = shown ? data.shownPageId : project.activePageId;
+    project.codex = data.codex || null;
+    ensureCodex(project);
     return project;
   }
 
@@ -120,6 +237,9 @@
     saveProject: saveProject,
     createProject: createProject,
     blankPage: blankPage,
+    emptyScene: emptyScene,
+    defaultCodex: defaultCodex,
+    ensureCodex: ensureCodex,
     hashPassword: hashPassword,
     exportData: exportData,
     applyImport: applyImport

@@ -10,9 +10,17 @@
   const frame = document.getElementById("frame");
 
   let project = null;
-  let editor = null;
-  let silent = false;
+  let viewCodex = false;
+  let paintReady = false;
+  let paintTool = "brush";
+  let paintColor = "#f3ead8";
+  let paintSize = 8;
+  let paintDrawing = false;
+  let paintUndo = [];
+  let paintToken = 0;
   let saveTimer = 0;
+  let saveChain = Promise.resolve();
+  let navLock = false;
 
   function show(section) {
     gate.classList.toggle("hidden", section !== gate);
@@ -41,15 +49,121 @@
   function fitFrame() {
     const stage = project.stage;
     const scale = Math.min(window.innerWidth / stage.width, window.innerHeight / stage.height);
-    frame.style.width = stage.width + "px";
-    frame.style.height = stage.height + "px";
-    frame.style.transform = "scale(" + scale + ")";
+    const fit = document.getElementById("stage-fit");
+    fit.style.width = stage.width + "px";
+    fit.style.height = stage.height + "px";
+    fit.style.transform = "scale(" + scale + ")";
+  }
+
+  function playerPage() {
+    const id = project.shownPageId || project.activePageId;
+    return project.pages.find(function (page) { return page.id === id; }) || project.pages[0];
   }
 
   function renderPlay() {
-    const page = activePage();
-    frame.srcdoc = pageDocument(page);
+    const page = playerPage();
+    const kind = page.kind || "free";
+    const scenePlay = document.getElementById("scene-play");
+    frame.classList.toggle("hidden", kind !== "free");
+    scenePlay.classList.toggle("hidden", kind === "free");
+    if (kind === "free") {
+      if (page.paint) {
+        frame.classList.add("hidden");
+        scenePlay.classList.remove("hidden");
+        scenePlay.innerHTML = "";
+        const img = document.createElement("img");
+        img.className = "paint-view";
+        img.alt = "";
+        img.src = page.paint;
+        scenePlay.appendChild(img);
+      } else {
+        frame.classList.remove("hidden");
+        scenePlay.classList.add("hidden");
+        frame.srcdoc = pageDocument(page);
+      }
+    } else {
+      window.ShirmoScenes.setContext({
+        catalog: function () { return project.codex; },
+        page: function () { return page; }
+      });
+      window.ShirmoScenes.renderPlay(scenePlay, page, function (mutate) {
+        mutate(page);
+        renderPlay();
+        store.getProject().then(function (fresh) {
+          if (!fresh) return;
+          const current = fresh.pages.find(function (item) { return item.id === page.id; });
+          if (!current) return;
+          mutate(current);
+          fresh.rev = (fresh.rev || 0) + 1;
+          return store.saveProject(fresh);
+        }).then(function () {
+          live.touch();
+        });
+      });
+    }
+    window.ShirmoDice.sync(document.getElementById("die"), project.die, project.stage);
+    syncHit(document.getElementById("float"), project.hit);
     fitFrame();
+  }
+
+  function appendLog(line) {
+    const page = activePage();
+    const scene = page && page.scene;
+    if (!page || page.kind !== "initiative" || !scene || !scene.logRolls) return;
+    scene.log = scene.log && String(scene.log).trim() ? String(scene.log).replace(/\s*$/, "") + "\n" + line : line;
+    const area = document.querySelector("#scene-editor [data-log]");
+    if (area) area.value = scene.log;
+  }
+
+  function textEsc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+
+  function syncHit(node, hit) {
+    if (!node || !hit || !hit.id) return;
+    if (node.dataset.played === String(hit.id)) return;
+    if (Date.now() - (Number(hit.at) || 0) > 6000) {
+      node.dataset.played = String(hit.id);
+      return;
+    }
+    node.dataset.played = String(hit.id);
+    node.innerHTML = '<div class="dmg-pop"><b>' + textEsc(hit.total) + "</b>" +
+      (hit.label ? "<small>" + textEsc(hit.label) + "</small>" : "") + "</div>";
+    setTimeout(function () {
+      if (node.dataset.played === String(hit.id)) node.innerHTML = "";
+    }, 2100);
+  }
+
+  function publishDie(result, label) {
+    captureEditor();
+    const page = activePage();
+    const scene = page && page.scene;
+    const ms = scene && scene.dieMs ? scene.dieMs : 2300;
+    appendLog((label ? label + ": " : "Бросок: ") + result);
+    project.die = {
+      id: store.uid(),
+      result: result,
+      label: label || "",
+      at: Date.now(),
+      ms: ms
+    };
+    const button = document.getElementById("roll-d20");
+    if (button) button.title = "Выпало " + result;
+    persist();
+  }
+
+  function publishHit(total, label) {
+    captureEditor();
+    appendLog((label ? label + ": " : "Урон: ") + total);
+    project.hit = {
+      id: store.uid(),
+      total: total,
+      label: label || "",
+      at: Date.now()
+    };
+    persist();
   }
 
   function download(blob, name) {
@@ -61,41 +175,197 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  function captureEditor() {
-    if (!editor) return;
+  function codexOpen() {
+    return viewCodex;
+  }
+
+  function paintCanvas() {
+    return document.getElementById("paint-canvas");
+  }
+
+  function paintPoint(event, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * canvas.width / rect.width,
+      y: (event.clientY - rect.top) * canvas.height / rect.height
+    };
+  }
+
+  function paintBlank(ctx, canvas) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#16130f";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  function savePaint() {
     const page = activePage();
-    page.html = editor.getHtml();
-    page.css = editor.getCss();
+    const canvas = paintCanvas();
+    if (!page || !canvas || !canvas.width) return;
+    page.paint = canvas.toDataURL("image/png");
+  }
+
+  function drawPaint(page) {
+    const canvas = paintCanvas();
+    if (!canvas || !project) return;
+    const width = project.stage.width;
+    const height = project.stage.height;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    const ctx = canvas.getContext("2d");
+    paintBlank(ctx, canvas);
+    paintUndo = [];
+    const src = page && page.paint ? page.paint : "";
+    if (!src) return;
+    const token = ++paintToken;
+    const img = new Image();
+    img.onload = function () {
+      if (token !== paintToken) return;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+    img.src = src;
+  }
+
+  function bindPaint() {
+    if (paintReady) return;
+    paintReady = true;
+    const canvas = paintCanvas();
+    const ctx = canvas.getContext("2d");
+    function strokeTo(point) {
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = paintSize;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = paintTool === "eraser" ? "#16130f" : paintColor;
+      ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+    }
+    canvas.addEventListener("pointerdown", function (event) {
+      if (viewCodex) return;
+      paintUndo.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      if (paintUndo.length > 12) paintUndo.shift();
+      paintDrawing = true;
+      try { canvas.setPointerCapture(event.pointerId); } catch (err) { /* жест уже закончился */ }
+      const point = paintPoint(event, canvas);
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+      strokeTo(point);
+    });
+    canvas.addEventListener("pointermove", function (event) {
+      if (!paintDrawing) return;
+      strokeTo(paintPoint(event, canvas));
+    });
+    function finish() {
+      if (!paintDrawing) return;
+      paintDrawing = false;
+      savePaint();
+      scheduleSave();
+    }
+    canvas.addEventListener("pointerup", finish);
+    canvas.addEventListener("pointercancel", finish);
+    document.querySelectorAll("[data-paint-tool]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        paintTool = button.getAttribute("data-paint-tool");
+        document.querySelectorAll("[data-paint-tool]").forEach(function (chip) {
+          chip.classList.toggle("is-on", chip === button);
+        });
+      });
+    });
+    document.getElementById("paint-color").addEventListener("input", function (event) {
+      paintColor = event.target.value;
+      paintTool = "brush";
+      document.querySelectorAll("[data-paint-tool]").forEach(function (chip) {
+        chip.classList.toggle("is-on", chip.getAttribute("data-paint-tool") === "brush");
+      });
+    });
+    document.getElementById("paint-size").addEventListener("input", function (event) {
+      paintSize = Number(event.target.value) || 8;
+    });
+    document.getElementById("paint-undo").addEventListener("click", function () {
+      const shot = paintUndo.pop();
+      if (!shot) return;
+      ctx.putImageData(shot, 0, 0);
+      savePaint();
+      scheduleSave();
+    });
+    document.getElementById("paint-clear").addEventListener("click", function () {
+      paintUndo.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      paintBlank(ctx, canvas);
+      savePaint();
+      scheduleSave();
+    });
+    document.getElementById("paint-download").addEventListener("click", function () {
+      savePaint();
+      canvas.toBlob(function (blob) {
+        if (!blob) return;
+        const page = activePage();
+        download(blob, (page && page.name ? page.name : "холст") + ".png");
+      }, "image/png");
+    });
+  }
+
+  function showCodex() {
+    viewCodex = true;
+    document.getElementById("gjs").classList.add("hidden");
+    document.getElementById("paint").classList.add("hidden");
+    document.getElementById("scene-editor").classList.add("hidden");
+    const codex = document.getElementById("codex");
+    codex.classList.remove("hidden");
+    const kindSelect = document.getElementById("page-kind");
+    if (kindSelect) kindSelect.value = "codex";
+    window.ShirmoScenes.setContext({
+      catalog: function () { return project.codex; },
+      page: activePage
+    });
+    window.ShirmoScenes.mountCodex(codex, scheduleSave);
+  }
+
+  function captureEditor() {
+    const page = activePage();
+    if (!page || viewCodex) return;
+    const kind = page.editKind || page.kind || "free";
+    if (kind !== "free") {
+      window.ShirmoScenes.commit(document.getElementById("scene-editor"), page);
+      return;
+    }
+    if (!document.getElementById("paint").classList.contains("hidden")) savePaint();
   }
 
   function loadIntoEditor(page) {
-    silent = true;
-    editor.setComponents(page.html || "");
-    editor.setStyle(page.css || "");
-    setTimeout(function () { silent = false; }, 0);
+    const kind = page.editKind || page.kind || "free";
+    const panel = document.getElementById("scene-editor");
+    const kindSelect = document.getElementById("page-kind");
+    if (viewCodex) {
+      if (kindSelect) kindSelect.value = "codex";
+      showCodex();
+      return;
+    }
+    if (kindSelect) kindSelect.value = kind;
+    document.getElementById("codex").classList.add("hidden");
+    document.getElementById("gjs").classList.add("hidden");
+    if (kind === "free") {
+      document.getElementById("paint").classList.remove("hidden");
+      panel.classList.add("hidden");
+      drawPaint(page);
+      return;
+    }
+    document.getElementById("paint").classList.add("hidden");
+    panel.classList.remove("hidden");
+    window.ShirmoScenes.mount(panel, page, scheduleSave);
   }
 
   function applyDevice() {
-    const devices = editor.Devices || editor.DeviceManager;
-    const stage = project.stage;
-    const current = devices.get("screen");
-    if (current) {
-      current.set({ width: stage.width + "px", height: stage.height + "px" });
+    if (!viewCodex && activePage() && (activePage().editKind || activePage().kind || "free") === "free") {
+      drawPaint(activePage());
     }
-    editor.setDevice("screen");
-    const doc = editor.Canvas.getDocument();
-    if (!doc) return;
-    let tag = doc.getElementById("shirmo-stage");
-    if (!tag) {
-      tag = doc.createElement("style");
-      tag.id = "shirmo-stage";
-      doc.head.appendChild(tag);
-    }
-    tag.textContent = "html,body{width:" + stage.width + "px;height:" + stage.height + "px;overflow:hidden;}";
   }
 
   function fillPages() {
     const select = document.getElementById("pages");
+    navLock = true;
     select.innerHTML = "";
     project.pages.forEach(function (page) {
       const option = document.createElement("option");
@@ -106,74 +376,65 @@
     });
     document.getElementById("stage-w").value = project.stage.width;
     document.getElementById("stage-h").value = project.stage.height;
+    navLock = false;
+    updateShowButton();
+  }
+
+  function updateShowButton() {
+    const button = document.getElementById("show-scene");
+    if (!button || !project) return;
+    const page = activePage();
+    const editing = page ? (page.editKind || page.kind || "free") : "free";
+    const published = page ? (page.kind || "free") : "free";
+    button.classList.toggle("primary", !page || project.shownPageId !== page.id || editing !== published);
+  }
+
+  function persist() {
+    clearTimeout(saveTimer);
+    captureEditor();
+    const seen = project.rev || 0;
+    saveChain = saveChain.then(function () {
+      return store.getProject();
+    }).then(function (fresh) {
+      if (fresh && (fresh.rev || 0) > (project.rev || 0)) {
+        window.ShirmoScenes.mergeRuntime(project, fresh);
+      }
+      project.rev = Math.max(project.rev || 0, fresh && fresh.rev || 0, seen) + 1;
+      return store.saveProject(project);
+    }).then(function () { live.touch(); });
+    return saveChain;
   }
 
   function scheduleSave() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(function () {
-      captureEditor();
-      store.saveProject(project).then(function () { live.touch(); });
-    }, 250);
-  }
-
-  function pluginFn() {
-    const mod = window["gjs-blocks-basic"];
-    return mod && (mod.default || mod);
+    saveTimer = setTimeout(persist, 200);
   }
 
   function startEditor() {
     show(editorSection);
+    const shownOk = project.pages.some(function (page) { return page.id === project.shownPageId; });
+    if (!shownOk) project.shownPageId = project.activePageId;
     fillPages();
-    if (editor) {
-      loadIntoEditor(activePage());
-      applyDevice();
-      return;
-    }
-    const blocks = pluginFn();
-    const blockOpts = {
-      category: "Блоки",
-      flexGrid: true,
-      blocks: ["column1", "column2", "column3", "column3-7", "text", "link", "image"],
-      labelColumn1: "1 колонка",
-      labelColumn2: "2 колонки",
-      labelColumn3: "3 колонки",
-      labelColumn37: "2 колонки 3/7",
-      labelText: "Текст",
-      labelLink: "Ссылка",
-      labelImage: "Картинка"
-    };
-    editor = grapesjs.init({
-      container: "#gjs",
-      height: "100%",
-      width: "auto",
-      fromElement: false,
-      storageManager: false,
-      noticeOnUnload: false,
-      plugins: [function (ed) { blocks(ed, blockOpts); }],
-      deviceManager: {
-        devices: [{
-          id: "screen",
-          name: "Планшет",
-          width: project.stage.width + "px",
-          height: project.stage.height + "px"
-        }]
-      },
-      assetManager: { embedAsBase64: true },
-      canvas: { styles: ["css/frame.css"] }
-    });
-
-    editor.on("load", function () {
-      editor.BlockManager.add("cover", {
-        label: "Обложка",
-        category: "Ширма",
-        content: '<section style="box-sizing:border-box;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:56px;background:#1a1612 center/cover no-repeat;color:#f3ead8;font-family:Georgia,serif;"><h1 style="margin:0;font-size:76px;font-weight:500;">Название</h1><p style="margin:12px 0 0;font-size:28px;color:#d7c4a3;">Подпись</p></section>',
-        media: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 5h18v14H3z"/></svg>'
-      });
-      loadIntoEditor(activePage());
-      applyDevice();
-      editor.on("update", function () {
-        if (!silent) scheduleSave();
-      });
+    if (!shownOk) persist();
+    bindPaint();
+    loadIntoEditor(activePage());
+    live.onRefresh(async function () {
+      const fresh = await store.getProject();
+      if (!fresh || (fresh.rev || 0) < (project.rev || 0)) return;
+      window.ShirmoScenes.mergeRuntime(project, fresh);
+      project.rev = fresh.rev || project.rev;
+      const codex = document.getElementById("codex");
+      const panel = document.getElementById("scene-editor");
+      const pop = document.getElementById("pop");
+      if (pop && !pop.classList.contains("hidden") && pop.contains(document.activeElement)) return;
+      if (viewCodex) {
+        if (!codex.contains(document.activeElement)) window.ShirmoScenes.mountCodex(codex, scheduleSave);
+        return;
+      }
+      if (panel.contains(document.activeElement)) return;
+      if (document.getElementById("paint-canvas") === document.activeElement) return;
+      const kind = activePage().editKind || activePage().kind || "free";
+      if (kind !== "free") loadIntoEditor(activePage());
     });
   }
 
@@ -193,24 +454,60 @@
       await store.saveProject(project);
     }
     if (!project.stage) project.stage = { width: store.STAGE.width, height: store.STAGE.height };
+    project.pages.forEach(function (page) {
+      if (!page.editKind) page.editKind = page.kind || "free";
+    });
+    const hadCodex = !!project.codex;
+    store.ensureCodex(project);
+    if (!hadCodex) await store.saveProject(project);
   }
 
   function bindEditor() {
+    window.ShirmoScenes.setRoll(publishDie);
+    window.ShirmoScenes.setHit(publishHit);
+    window.ShirmoScenes.setContext({
+      catalog: function () { return project.codex; },
+      page: activePage
+    });
+    document.getElementById("roll-d20").addEventListener("click", function () {
+      publishDie(1 + Math.floor(Math.random() * 20), "");
+    });
+
     document.getElementById("pages").addEventListener("change", function (event) {
+      if (navLock) return;
       captureEditor();
       project.activePageId = event.target.value;
       loadIntoEditor(activePage());
-      scheduleSave();
+      updateShowButton();
+      persist();
+    });
+
+    document.getElementById("page-kind").addEventListener("change", function (event) {
+      const page = activePage();
+      captureEditor();
+      const value = event.target.value || "free";
+      if (value === "codex") {
+        showCodex();
+        return;
+      }
+      viewCodex = false;
+      page.editKind = value;
+      updateShowButton();
+      loadIntoEditor(page);
+      persist();
     });
 
     document.getElementById("page-add").addEventListener("click", function () {
       captureEditor();
-      const page = store.blankPage("Сцена " + (project.pages.length + 1));
+      const picked = document.getElementById("page-kind").value;
+      const kind = picked === "codex" ? (activePage().editKind || "free") : picked;
+      const page = store.blankPage("Сцена " + (project.pages.length + 1), kind);
       project.pages.push(page);
       project.activePageId = page.id;
       fillPages();
       loadIntoEditor(page);
-      scheduleSave();
+      updateShowButton();
+      persist();
     });
 
     document.getElementById("page-rename").addEventListener("click", function () {
@@ -226,14 +523,17 @@
       if (project.pages.length < 2) return;
       const page = activePage();
       if (!confirm("Удалить «" + page.name + "»?")) return;
+      const removed = page.id;
       project.pages = project.pages.filter(function (item) { return item.id !== page.id; });
       project.activePageId = project.pages[0].id;
+      if (project.shownPageId === removed) project.shownPageId = project.activePageId;
       fillPages();
       loadIntoEditor(activePage());
       scheduleSave();
     });
 
     function readStage() {
+      if (!viewCodex) savePaint();
       project.stage.width = clampStage(document.getElementById("stage-w").value, project.stage.width, 320, 3840);
       project.stage.height = clampStage(document.getElementById("stage-h").value, project.stage.height, 240, 2160);
       document.getElementById("stage-w").value = project.stage.width;
@@ -243,12 +543,22 @@
     }
     document.getElementById("stage-w").addEventListener("change", readStage);
     document.getElementById("stage-h").addEventListener("change", readStage);
-    document.getElementById("share").addEventListener("click", function () {
+    document.getElementById("show-scene").addEventListener("click", function () {
       captureEditor();
-      store.saveProject(project).then(function () {
-        live.touch();
-        openShare();
-      });
+      const page = activePage();
+      const kind = page.editKind || page.kind || "free";
+      page.kind = kind;
+      page.scenes = page.scenes || {};
+      if (kind !== "free") {
+        page.scene = page.scenes[kind] || store.emptyScene(kind);
+        page.scenes[kind] = page.scene;
+      }
+      project.shownPageId = page.id;
+      updateShowButton();
+      persist();
+    });
+    document.getElementById("share").addEventListener("click", function () {
+      persist().then(openShare);
     });
 
     document.getElementById("export-json").addEventListener("click", function () {
@@ -293,6 +603,10 @@
       }
       await store.saveProject(project);
       live.touch();
+      window.ShirmoScenes.setContext({
+        catalog: function () { return project.codex; },
+        page: activePage
+      });
       fillPages();
       loadIntoEditor(activePage());
       applyDevice();
