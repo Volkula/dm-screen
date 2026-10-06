@@ -1,0 +1,129 @@
+:root {
+  color-scheme: dark;
+  --bg: #100e0c;
+  --panel: #1c1814;
+  --line: #3a3128;
+  --ink: #f4efe6;
+  --muted: #b7a894;
+  --brass: #d7b56d;
+  --danger: #e07a5f;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", sans-serif;
+}
+
+button, input, select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: #2a241d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--brass); }
+
+button.primary {
+  background: var(--brass);
+  color: #1a140c;
+  border-color: transparent;
+  font-weight: 650;
+}
+
+button.danger { color: var(--danger); }
+
+.gate {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.card {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card h1 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-size: 64px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+
+.card p { margin: 0; color: var(--muted); line-height: 1.45; }
+
+.choices, .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.choices button { min-width: 140px; padding: 14px 18px; }
+
+label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 14px; }
+
+input, select {
+  background: #120f0c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.error { color: var(--danger); min-height: 1.2em; margin: 0; }
+
+.editor {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+
+.topbar .size {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.topbar .size input { width: 76px; }
+
+.spacer { flex: 1; }
+
+#gjs { flex: 1; min-height: 0; }
+
+.stage-view {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: #000;
+  overflow: hidden;
+}
+
+.stage-view iframe {
+  border: 0;
+  background: #16130f;
+  transform-origin: center center;
+}
+
+.hidden { display: none !important; }

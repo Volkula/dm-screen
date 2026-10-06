@@ -1,0 +1,127 @@
+(function () {
+  const DB_NAME = "shirmo";
+  const STAGE = { width: 1368, height: 786 };
+
+  function uid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  }
+
+  function openDb() {
+    return new Promise(function (resolve, reject) {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = function () {
+        req.result.createObjectStore("kv");
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+
+  function getProject() {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction("kv", "readonly");
+        const req = tx.objectStore("kv").get("project");
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  }
+
+  function saveProject(project) {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").put(project, "project");
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
+  function blankPage(name) {
+    return {
+      id: uid(),
+      name: name,
+      html: '<section class="cover"><h1>' + name + '</h1><p>Картинка, текст, что угодно.</p></section>',
+      css: [
+        ".cover{box-sizing:border-box;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:56px;",
+        "background:#1a1612 center/cover no-repeat;color:#f3ead8;font-family:Georgia,serif;}",
+        ".cover h1{margin:0;font-size:76px;font-weight:500;line-height:1.05;}",
+        ".cover p{margin:12px 0 0;font-size:28px;color:#d7c4a3;}"
+      ].join("")
+    };
+  }
+
+  function createProject() {
+    const page = blankPage("Сцена 1");
+    return {
+      version: 1,
+      stage: { width: STAGE.width, height: STAGE.height },
+      password: null,
+      pages: [page],
+      activePageId: page.id
+    };
+  }
+
+  async function hashPassword(password, salt) {
+    const usedSalt = salt || Array.from(crypto.getRandomValues(new Uint8Array(16)), function (b) {
+      return b.toString(16).padStart(2, "0");
+    }).join("");
+    if (crypto.subtle) {
+      const data = new TextEncoder().encode(usedSalt + ":" + password);
+      const buf = await crypto.subtle.digest("SHA-256", data);
+      const hash = Array.from(new Uint8Array(buf), function (b) {
+        return b.toString(16).padStart(2, "0");
+      }).join("");
+      return { salt: usedSalt, hash: hash };
+    }
+    let h = 5381;
+    const text = usedSalt + ":" + password;
+    for (let i = 0; i < text.length; i++) h = ((h << 5) + h) ^ text.charCodeAt(i);
+    return { salt: usedSalt, hash: String(h >>> 0) };
+  }
+
+  function exportData(project) {
+    return {
+      version: 1,
+      stage: project.stage,
+      pages: project.pages,
+      activePageId: project.activePageId
+    };
+  }
+
+  function applyImport(project, data) {
+    if (!data || !Array.isArray(data.pages) || !data.pages.length) {
+      throw new Error("В файле нет страниц");
+    }
+    project.stage = {
+      width: Number(data.stage && data.stage.width) || STAGE.width,
+      height: Number(data.stage && data.stage.height) || STAGE.height
+    };
+    project.pages = data.pages.map(function (page) {
+      return {
+        id: page.id || uid(),
+        name: page.name || "Сцена",
+        html: page.html || "",
+        css: page.css || ""
+      };
+    });
+    const known = project.pages.some(function (page) { return page.id === data.activePageId; });
+    project.activePageId = known ? data.activePageId : project.pages[0].id;
+    return project;
+  }
+
+  window.ShirmoStore = {
+    STAGE: STAGE,
+    uid: uid,
+    getProject: getProject,
+    saveProject: saveProject,
+    createProject: createProject,
+    blankPage: blankPage,
+    hashPassword: hashPassword,
+    exportData: exportData,
+    applyImport: applyImport
+  };
+})();

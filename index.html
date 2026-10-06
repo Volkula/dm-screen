@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ширма</title>
+  <link rel="stylesheet" href="vendor/grapes.min.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <section id="gate" class="gate">
+    <div class="card">
+      <h1>Ширма</h1>
+      <p id="gate-text">Мастер собирает сцены. Игрок и окно Share видят только картинку.</p>
+      <div id="choices" class="choices">
+        <button class="primary" id="enter-master" type="button">Мастер</button>
+        <button id="enter-player" type="button">Игрок</button>
+      </div>
+      <form id="auth" class="hidden">
+        <label><span id="password-label">Пароль</span>
+          <input id="password" type="password" autocomplete="current-password" required>
+        </label>
+        <label id="confirm-label" class="hidden">Ещё раз
+          <input id="confirm" type="password" autocomplete="new-password">
+        </label>
+        <div class="row">
+          <button class="primary" type="submit">Войти</button>
+          <button id="auth-back" type="button">Назад</button>
+        </div>
+        <p id="auth-error" class="error"></p>
+      </form>
+    </div>
+  </section>
+
+  <section id="editor" class="editor hidden">
+    <div class="topbar">
+      <select id="pages" aria-label="Страница"></select>
+      <button id="page-add" type="button" title="Новая страница">+</button>
+      <button id="page-rename" type="button">Имя</button>
+      <button id="page-delete" class="danger" type="button">Удалить</button>
+      <div class="size">
+        <input id="stage-w" type="number" min="320" max="3840" aria-label="Ширина">
+        ×
+        <input id="stage-h" type="number" min="240" max="2160" aria-label="Высота">
+      </div>
+      <span class="spacer"></span>
+      <button id="share" class="primary" type="button">Share</button>
+      <button id="export-json" type="button">JSON</button>
+      <button id="export-zip" type="button">ZIP</button>
+      <button id="import-file" type="button">Открыть</button>
+      <input id="import-input" type="file" accept="application/json,.json,application/zip,.zip" class="hidden">
+      <button id="logout" type="button">Выйти</button>
+    </div>
+    <div id="gjs"></div>
+  </section>
+
+  <section id="stage-view" class="stage-view hidden">
+    <iframe id="frame" title="Экран ширмы"></iframe>
+  </section>
+
+  <script src="vendor/grapes.min.js"></script>
+  <script src="vendor/blocks-basic.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/live.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
