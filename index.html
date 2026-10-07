@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ширма</title>
-  <link rel="stylesheet" href="css/app.css?v=12">
+  <link rel="stylesheet" href="css/app.css?v=13">
 </head>
 <body>
   <section id="gate" class="gate">
@@ -51,6 +51,15 @@
       </div>
       <span class="spacer"></span>
       <button id="roll-d20" type="button" title="Бросок d20" aria-label="Бросок d20"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3l8 4.8v8.4L12 21l-8-4.8V7.8z" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      <div id="fx-wrap" class="fx-wrap">
+        <button id="fx-open" type="button" title="Прозрачный слой на все панели этой сцены">Эффекты</button>
+        <div id="fx-menu" class="fx-menu hidden">
+          <button type="button" data-fx="">Выкл</button>
+          <button type="button" data-fx="rain">Дождь</button>
+          <button type="button" data-fx="storm">Шторм</button>
+          <button type="button" data-fx="fire">Огонь</button>
+        </div>
+      </div>
       <button id="share" class="primary" type="button">Share</button>
       <button id="export-json" type="button">JSON</button>
       <button id="export-zip" type="button">ZIP</button>
@@ -99,6 +108,7 @@
     <div id="stage-fit">
       <iframe id="frame" title="Экран ширмы"></iframe>
       <div id="scene-play" class="hidden"></div>
+      <video id="fx" class="hidden" muted loop playsinline></video>
       <canvas id="die"></canvas>
       <div id="float"></div>
     </div>
@@ -114,6 +124,6 @@
   <script src="js/live.js"></script>
   <script src="js/scenes.js?v=16"></script>
   <script src="js/dice.js?v=2"></script>
-  <script src="js/main.js?v=9"></script>
+  <script src="js/main.js?v=10"></script>
 </body>
 </html>

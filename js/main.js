@@ -113,7 +113,48 @@
     }
     window.ShirmoDice.sync(document.getElementById("die"), project.die, project.stage);
     syncHit(document.getElementById("float"), project.hit);
+    syncFx(page.fx);
     fitFrame();
+  }
+
+  const fxNames = { rain: "Дождь", storm: "Шторм", fire: "Огонь" };
+
+  function syncFx(name) {
+    const video = document.getElementById("fx");
+    if (!video) return;
+    const next = fxNames[name] ? name : "";
+    if (!next) {
+      video.classList.add("hidden");
+      if (video.getAttribute("src")) {
+        video.removeAttribute("src");
+        video.load();
+      }
+      video.dataset.fx = "";
+      return;
+    }
+    if (video.dataset.fx === next) {
+      video.classList.remove("hidden");
+      if (video.paused) video.play().catch(function () {});
+      return;
+    }
+    video.dataset.fx = next;
+    video.muted = true;
+    video.loop = true;
+    video.classList.remove("hidden");
+    video.src = "fx/" + next + ".webm";
+    video.play().catch(function () {});
+  }
+
+  function syncFxButton() {
+    const page = activePage();
+    const name = page && fxNames[page.fx] ? page.fx : "";
+    const open = document.getElementById("fx-open");
+    if (!open) return;
+    open.classList.toggle("is-on", Boolean(name));
+    open.textContent = name ? "Эффекты: " + fxNames[name] : "Эффекты";
+    document.querySelectorAll("#fx-menu [data-fx]").forEach(function (button) {
+      button.classList.toggle("is-on", (button.getAttribute("data-fx") || "") === name);
+    });
   }
 
   function appendLog(line) {
@@ -1566,6 +1607,7 @@
   }
 
   function loadIntoEditor(page) {
+    syncFxButton();
     const kind = page.editKind || page.kind || "free";
     const panel = document.getElementById("scene-editor");
     const kindSelect = document.getElementById("page-kind");
@@ -1723,6 +1765,25 @@
     });
     document.getElementById("roll-d20").addEventListener("click", function () {
       publishDie(1 + Math.floor(Math.random() * 20), "");
+    });
+    const fxWrap = document.getElementById("fx-wrap");
+    fxWrap.addEventListener("click", function (event) { event.stopPropagation(); });
+    document.getElementById("fx-open").addEventListener("click", function () {
+      document.getElementById("fx-menu").classList.toggle("hidden");
+      syncFxButton();
+    });
+    document.getElementById("fx-menu").addEventListener("click", function (event) {
+      const button = event.target.closest("[data-fx]");
+      if (!button) return;
+      const page = activePage();
+      if (!page) return;
+      page.fx = button.getAttribute("data-fx") || "";
+      document.getElementById("fx-menu").classList.add("hidden");
+      syncFxButton();
+      persist();
+    });
+    document.addEventListener("click", function () {
+      document.getElementById("fx-menu").classList.add("hidden");
     });
 
     document.getElementById("pages").addEventListener("change", function (event) {

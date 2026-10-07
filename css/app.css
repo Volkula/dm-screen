@@ -700,6 +700,17 @@ tr.is-drop { outline: 1px solid var(--brass); }
   transform: rotate(-20deg);
 }
 
+#fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: 3;
+  background: transparent;
+}
+
 #die {
   position: absolute;
   inset: 0;
@@ -708,6 +719,24 @@ tr.is-drop { outline: 1px solid var(--brass); }
   pointer-events: none;
   z-index: 4;
 }
+
+.fx-wrap { position: relative; }
+
+.fx-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 132px;
+  padding: 6px;
+  background: var(--panel);
+  border: 2px solid var(--brass);
+}
+
+#fx-open.is-on, .fx-menu button.is-on { color: var(--brass); border-color: var(--brass); }
 
 .battle-mark.player { background: #143d24; color: #8dffb8; border-color: #3ecf78; }
 .battle-mark.npc { background: #3d1410; color: #ffb0a4; border-color: #e4533e; }
