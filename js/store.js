@@ -140,6 +140,7 @@
         { id: uid(), name: "Кольчуга", price: "75 зм", note: "", image: "" },
         { id: uid(), name: "Щит", price: "10 зм", note: "", image: "" }
       ],
+      places: [],
       coins: [
         { id: uid(), name: "Медная", code: "мм", copper: 1 },
         { id: uid(), name: "Серебряная", code: "см", copper: 10 },
@@ -155,6 +156,7 @@
     project.codex.npcs = project.codex.npcs || [];
     project.codex.goods = project.codex.goods || [];
     project.codex.coins = project.codex.coins || [];
+    project.codex.places = project.codex.places || [];
     return project.codex;
   }
 
@@ -217,6 +219,7 @@
         html: page.html || "",
         css: page.css || "",
         paint: page.paint || "",
+        paintLayers: Array.isArray(page.paintLayers) ? page.paintLayers : null,
         scene: page.scene || null,
         scenes: page.scenes || null
       };

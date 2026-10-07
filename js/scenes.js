@@ -29,7 +29,10 @@
   }
 
   function safeSrc(src) {
-    return typeof src === "string" && src.indexOf("data:image/") === 0 ? src : "";
+    if (typeof src !== "string" || !src || /["'<>\\]/.test(src)) return "";
+    if (src.indexOf("data:image/") === 0) return src;
+    if (/^img\/monsters\/[^/]+\.jpe?g$/i.test(src)) return src;
+    return "";
   }
 
   function readData(file) {
@@ -159,6 +162,7 @@
     scene.backgroundScale = scaleOf(scene.backgroundScale);
     scene.dieMs = Math.min(6000, Math.max(400, Number(scene.dieMs) || 2300));
     scene.logRolls = Boolean(scene.logRolls);
+    scene.autoSort = Boolean(scene.autoSort);
     scene.actors.forEach(function (person) {
       if (!person.id) person.id = newActor().id;
       person.init = Number(person.init) || 0;
@@ -184,6 +188,7 @@
     if (!scene.actors.some(function (person) { return person.id === scene.activeId; })) {
       scene.activeId = scene.actors[0] ? scene.actors[0].id : "";
     }
+    ensureLayout(scene);
   }
 
   function ordered(scene) {
@@ -192,6 +197,72 @@
     }).sort(function (a, b) {
       return (b.person.init - a.person.init) || (a.index - b.index);
     }).map(function (item) { return item.person; });
+  }
+
+  function ensureLayout(scene) {
+    const known = {};
+    (scene.actors || []).forEach(function (person) { known[person.id] = true; });
+    if (!Array.isArray(scene.layout)) scene.layout = [];
+    scene.layout = scene.layout.filter(function (row) {
+      if (!row || !row.id) return false;
+      if (row.kind === "sep") {
+        row.text = row.text || "";
+        return true;
+      }
+      row.kind = "actor";
+      return Boolean(known[row.id]);
+    });
+    const placed = {};
+    scene.layout.forEach(function (row) {
+      if (row.kind !== "sep") placed[row.id] = true;
+    });
+    (scene.actors || []).forEach(function (person) {
+      if (!placed[person.id]) scene.layout.push({ kind: "actor", id: person.id });
+    });
+  }
+
+  function sortLayout(scene) {
+    ensureLayout(scene);
+    if (!scene.autoSort) return false;
+    const byId = {};
+    scene.actors.forEach(function (person, index) {
+      byId[person.id] = { init: Number(person.init) || 0, index: index };
+    });
+    const next = [];
+    let chunk = [];
+    function flush() {
+      chunk.sort(function (a, b) {
+        const pa = byId[a.id];
+        const pb = byId[b.id];
+        return (pb.init - pa.init) || (pa.index - pb.index);
+      });
+      chunk.forEach(function (row) { next.push(row); });
+      chunk = [];
+    }
+    scene.layout.forEach(function (row) {
+      if (row.kind === "sep") {
+        flush();
+        next.push(row);
+      } else chunk.push(row);
+    });
+    flush();
+    let moved = next.length !== scene.layout.length;
+    for (let i = 0; i < next.length && !moved; i++) {
+      if (next[i] !== scene.layout[i]) moved = true;
+    }
+    if (moved) scene.layout = next;
+    return moved;
+  }
+
+  function placeLayout(scene, from, to) {
+    ensureLayout(scene);
+    if (from === to || from < 0 || to < 0 || from >= scene.layout.length || to >= scene.layout.length) return false;
+    const row = scene.layout[from];
+    const dest = from < to ? to - 1 : to;
+    scene.layout.splice(from, 1);
+    scene.layout.splice(dest, 0, row);
+    scene.autoSort = false;
+    return true;
   }
 
   function groupsOf(list) {
@@ -224,8 +295,8 @@
       portrait: '<circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 19c1.2-3 3.4-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="2"/>',
       shot: '<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 8.5v7l6-3.5z" fill="currentColor"/>',
       csv: '<path d="M7 3h7l5 5v13H7z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14 3v5h5M9 13h8M9 17h6" fill="none" stroke="currentColor" stroke-width="2"/>',
-      player: '<circle cx="12" cy="8" r="3" fill="currentColor"/><path d="M5.5 19c1.3-3 3.6-4.5 6.5-4.5s5.2 1.5 6.5 4.5" fill="none" stroke="currentColor" stroke-width="2"/>',
-      npc: '<path fill="currentColor" d="M12 2.5c-4.2 0-7.5 2.4-7.5 6.2 0 3.6 2.2 5.8 4.2 7.6L12 20.5l3.3-4.2c2-1.8 4.2-4 4.2-7.6C19.5 4.9 16.2 2.5 12 2.5zM9.2 9.4a1.35 1.35 0 110-2.7 1.35 1.35 0 010 2.7zm5.6 0a1.35 1.35 0 110-2.7 1.35 1.35 0 010 2.7z"/>',
+      player: '<path d="M12 2.2l7.2 2.6v6.2c0 4.6-3.1 8-7.2 9.8-4.1-1.8-7.2-5.2-7.2-9.8V4.8L12 2.2z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.2v7.2M9.2 9.6h5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+      npc: '<path d="M12 3.2a6.2 6.2 0 00-6.2 6.2c0 2.2 1.1 3.8 2.2 4.9V18h2.2v2.2h1.6V18h.4v2.2H14V18h2.2v-3.7c1.1-1.1 2.2-2.7 2.2-4.9A6.2 6.2 0 0012 3.2z" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="9.4" cy="9.6" r="1.15" fill="currentColor"/><circle cx="14.6" cy="9.6" r="1.15" fill="currentColor"/><path d="M10.2 13.5c.5.7 1.1 1 1.8 1s1.3-.3 1.8-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
       die: '<path d="M12 3l8 4.8v8.4L12 21l-8-4.8V7.8z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 3v18M4 7.8l16 8.4M20 7.8L4 16.2" fill="none" stroke="currentColor" stroke-width="1.2"/>',
       bleed: '<path d="M12 3s6 6.2 6 10a6 6 0 11-12 0c0-3.8 6-10 6-10z" fill="currentColor"/>',
       poison: '<circle cx="12" cy="13" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7V3M9 5h6" fill="none" stroke="currentColor" stroke-width="2"/>',
@@ -262,7 +333,7 @@
 
   function portraitHtml(src, letter) {
     const image = safeSrc(src);
-    if (image) return '<img class="face" alt="" src="' + image + '">';
+    if (image) return '<img class="face" alt="" src="' + esc(image) + '">';
     return '<div class="face face-empty">' + esc((letter || "?").slice(0, 1)) + "</div>";
   }
 
@@ -292,40 +363,81 @@
     };
   }
 
-  function blankPlace(name) {
-    return { id: freshId(), name: name || "Место", background: "", backgroundScale: 100, npcs: [] };
+  function blankPlace(name, parentId) {
+    return { id: freshId(), name: name || "Место", parentId: parentId || "", background: "", backgroundScale: 100, npcs: [] };
+  }
+
+  function worldPlaces() {
+    catalog.places = catalog.places || [];
+    return catalog.places;
+  }
+
+  function placeById(id) {
+    return worldPlaces().find(function (place) { return place.id === id; }) || null;
+  }
+
+  function childrenOf(parentId) {
+    const id = parentId || "";
+    return worldPlaces().filter(function (place) { return (place.parentId || "") === id; });
+  }
+
+  function placeCrumbs(place) {
+    const list = [];
+    let cursor = place;
+    let guard = 0;
+    while (cursor && guard < 24) {
+      list.unshift(cursor);
+      cursor = cursor.parentId ? placeById(cursor.parentId) : null;
+      guard += 1;
+    }
+    return list;
   }
 
   function ensurePlaces(scene) {
     ensureTalk(scene);
-    if (scene.locations && scene.locations.length) {
-      scene.locationId = scene.locationId || scene.locations[0].id;
-      return scene;
+    const places = worldPlaces();
+    if (!places.length && scene.locations && scene.locations.length) {
+      scene.locations.forEach(function (place) {
+        places.push({
+          id: place.id || freshId(),
+          name: place.name || "Место",
+          parentId: "",
+          background: place.background || "",
+          backgroundScale: place.backgroundScale || 100,
+          npcs: place.npcs || []
+        });
+      });
     }
-    const npc = blankNpc(scene.npcName || "Непись");
-    npc.portrait = scene.portrait || "";
-    npc.font = scene.font || npc.font;
-    npc.lines = scene.lines && scene.lines.length ? scene.lines.slice() : ["..."];
-    npc.line = scene.line || 0;
-    npc.goods = (scene.items || []).slice();
-    npc.shopOpen = Boolean(scene.shopOpen);
-    const place = blankPlace("Место");
-    place.background = scene.background || "";
-    place.backgroundScale = scene.backgroundScale || 100;
-    place.npcs = [npc];
-    scene.locations = [place];
-    scene.locationId = place.id;
-    scene.npcId = npc.id;
+    if (!places.length) {
+      const npc = blankNpc(scene.npcName || "Непись");
+      npc.portrait = scene.portrait || "";
+      npc.font = scene.font || npc.font;
+      npc.lines = scene.lines && scene.lines.length ? scene.lines.slice() : ["..."];
+      npc.line = scene.line || 0;
+      npc.goods = (scene.items || []).slice();
+      npc.shopOpen = Boolean(scene.shopOpen);
+      const place = blankPlace("Место", "");
+      place.background = scene.background || "";
+      place.backgroundScale = scene.backgroundScale || 100;
+      place.npcs = [npc];
+      places.push(place);
+      scene.locationId = place.id;
+      scene.npcId = npc.id;
+    }
+    if (!placeById(scene.locationId)) {
+      const roots = childrenOf("");
+      scene.locationId = (roots[0] || places[0]).id;
+    }
     return scene;
   }
 
   function placeOf(scene) {
     ensurePlaces(scene);
-    return scene.locations.find(function (place) { return place.id === scene.locationId; }) || scene.locations[0];
+    return placeById(scene.locationId) || worldPlaces()[0];
   }
 
   function npcOf(scene, id) {
-    const places = (scene.locations || []);
+    const places = worldPlaces();
     for (let i = 0; i < places.length; i++) {
       const found = (places[i].npcs || []).find(function (npc) { return npc.id === id; });
       if (found) return found;
@@ -385,37 +497,67 @@
     }).join("") + "</ul>";
   }
 
+  function npcState(scene, npc) {
+    const bag = scene.seen && scene.seen[npc.id];
+    return {
+      line: bag && bag.line != null ? bag.line : (npc.line || 0),
+      shopOpen: bag && bag.shopOpen != null ? bag.shopOpen : Boolean(npc.shopOpen)
+    };
+  }
+
+  function rememberSeen(scene, npc, patch) {
+    const prev = npcState(scene, npc);
+    scene.seen = scene.seen || {};
+    scene.seen[npc.id] = {
+      line: patch.line != null ? patch.line : prev.line,
+      shopOpen: patch.shopOpen != null ? patch.shopOpen : prev.shopOpen
+    };
+  }
+
+  function mapButton(place) {
+    return '<button type="button" class="place-map" data-map="' + esc(place.id) + '"><b>Карта</b><span>' + esc(place.name || "Место") + "</span></button>";
+  }
+
   function renderTalk(page) {
     const scene = page.scene;
     ensurePlaces(scene);
     const place = placeOf(scene);
     const open = npcOf(scene, scene.openId);
     const lootNpc = npcOf(scene, scene.lootId);
-    const cast = (place.npcs || []).map(function (npc) {
+    const parent = place.parentId ? placeById(place.parentId) : null;
+    const back = parent
+      ? '<button type="button" class="place-map" data-map="' + esc(parent.id) + '"><b>Назад</b><span>' + esc(parent.name || "Место") + "</span></button>"
+      : "";
+    const maps = childrenOf(place.id).map(mapButton).join("");
+    const showingPlace = scene.present === "place";
+    const cast = showingPlace ? "" : (place.npcs || []).map(function (npc) {
       return '<button type="button" class="place-token' + (npc.peaceful ? " peaceful" : " hostile") + '" data-npc="' + esc(npc.id) + '">' +
         portraitHtml(npc.portrait || npc.picture, npc.name) +
         "<span>" + esc(npc.name || "Непись") + "</span></button>";
     }).join("");
     let extra = "";
-    const loot = lootNpc ? (lootNpc.loot || []).filter(function (item) { return (item.name || "").trim(); }) : [];
-    if (loot.length) {
+    const loot = showingPlace ? [] : (lootNpc ? (lootNpc.loot || []).filter(function (item) { return (item.name || "").trim(); }) : []);
+    if (showingPlace) {
+      extra = '<div class="place-card ff-frame"><h2>' + esc(place.name || "Место") + "</h2></div>";
+    } else if (loot.length) {
       extra = '<aside class="shop ff-frame"><h2>Добыча</h2>' + shopList(loot) +
         '<button type="button" data-act="loot-close">Закрыть</button></aside>';
     } else if (open && open.peaceful) {
       const lines = open.lines && open.lines.length ? open.lines : ["..."];
-      const line = lines[Math.min(open.line || 0, lines.length - 1)] || "";
+      const state = npcState(scene, open);
+      const line = lines[Math.min(state.line, lines.length - 1)] || "";
       const items = (open.goods || []).filter(function (item) { return (item.name || "").trim(); });
-      const shop = open.shopOpen && items.length
+      const shop = state.shopOpen && items.length
         ? '<aside class="shop ff-frame"><h2>Товары</h2>' + coinLine() + shopList(items) + "</aside>"
         : "";
       const shopButton = items.length
-        ? '<button type="button" data-act="shop">' + (open.shopOpen ? "Закрыть торговлю" : "Торговля") + "</button>"
+        ? '<button type="button" data-act="shop">' + (state.shopOpen ? "Закрыть торговлю" : "Торговля") + "</button>"
         : "";
       extra = shop + '<div class="talk-box ff-frame"><div class="talk-name" style="font-family:' + esc(open.font || FONTS[0][1]) + '">' +
         esc(open.name || "Непись") + "</div><p>" + esc(line) + '</p><div class="talk-actions"><button type="button" data-act="talk">Говорить</button>' +
         shopButton + "</div></div>";
     }
-    return '<div class="place-screen"' + bgAttr(place) + '><div class="place-cast">' + cast + "</div>" + extra + "</div>";
+    return '<div class="place-screen"' + bgAttr(place) + '><div class="place-cast">' + back + maps + cast + "</div>" + extra + "</div>";
   }
 
   function statusIcons(person) {
@@ -442,11 +584,18 @@
     return '<small class="token-gear">' + esc(parts.join(" · ")) + "</small>";
   }
 
+  function battlePortrait(person) {
+    const image = safeSrc(person.portrait);
+    if (image) return '<img class="face" alt="" src="' + esc(image) + '">';
+    const side = person.side === "npc" ? "npc" : "player";
+    return '<div class="face face-empty face-icon">' + icon(side) + "</div>";
+  }
+
   function tokenHtml(person, active) {
     const side = person.side === "npc" ? "npc" : "player";
     const actions = side === "player" ? actionPips(person.actions || 0) : "";
-    return '<button type="button" class="battle-token' + (active ? " active" : "") + (person.dead ? " dead" : "") + '" data-actor-id="' + esc(person.id) + '">' +
-      '<span class="battle-face">' + portraitHtml(person.portrait, person.name) +
+    return '<button type="button" class="battle-token ' + side + (active ? " active" : "") + (person.dead ? " dead" : "") + '" data-actor-id="' + esc(person.id) + '">' +
+      '<span class="battle-face">' + battlePortrait(person) +
       '<span class="battle-mark ' + side + '" title="' + (side === "npc" ? "Непись" : "Игрок") + '">' + icon(side) + "</span></span>" +
       (actions ? '<span class="battle-actions">' + actions + "</span>" : "") +
       '<span class="token-name">' + esc(person.name || "—") + "</span>" +
@@ -456,9 +605,10 @@
 
   function turnBanner(person) {
     const face = person ? (safeSrc(person.portrait) || safeSrc(person.picture)) : "";
+    const side = person && person.side === "npc" ? "npc" : "player";
     const inner = face
       ? '<img class="turn-face" alt="" src="' + face + '">'
-      : '<div class="turn-face turn-letter">' + esc(person ? (person.name || "?").slice(0, 1) : "") + "</div>";
+      : '<div class="turn-face turn-letter ' + side + '">' + (person ? icon(side) : "") + "</div>";
     return '<div class="turn-banner">' + inner + '<img class="turn-frame" alt="" src="img/banner.png?v=3"></div>';
   }
 
@@ -486,7 +636,7 @@
   }
 
   function bossBars(scene) {
-    const bosses = scene.actors.filter(function (person) {
+    const bosses = ordered(scene).filter(function (person) {
       return person.side === "npc" && person.boss && Number(person.hpMax) > 0 && !person.dead;
     });
     if (!bosses.length) return "";
@@ -495,8 +645,8 @@
       const hp = Math.max(0, Math.min(max, Number(person.hp) || 0));
       const pct = Math.round(hp / max * 100);
       const tone = pct > 50 ? "high" : pct > 25 ? "mid" : "low";
-      return '<div class="boss-bar ff-frame"><span class="boss-name">' + esc(person.name || "—") +
-        '</span><span class="boss-track"><i class="' + tone + '" style="width:' + pct + '%"></i></span></div>';
+      return '<div class="boss-unit"><div class="boss-name">' + esc(person.name || "—") +
+        '</div><div class="boss-bar ff-frame"><span class="boss-track"><i class="' + tone + '" style="width:' + pct + '%"></i></span></div></div>';
     }).join("") + "</div>";
   }
 
@@ -524,12 +674,13 @@
   }
 
   function renderPlay(root, page, act) {
-    const fighting = page.kind !== "initiative" && page.scene && page.scene.fight && page.scene.fight.actors;
+    const showingPlace = page.kind === "talk" && page.scene && page.scene.present === "place";
+    const fighting = !showingPlace && page.kind !== "initiative" && page.scene && page.scene.fight && page.scene.fight.actors;
     root.innerHTML = page.kind === "initiative" || fighting
       ? renderInit(fighting ? { scene: page.scene.fight } : page, Boolean(fighting))
       : renderTalk(page);
     root.onclick = function (event) {
-      const button = event.target.closest("[data-act], [data-npc], .battle-token");
+      const button = event.target.closest("[data-act], [data-npc], [data-map], .battle-token");
       if (!button) return;
       act(function (current) {
         if (!current.scene) return;
@@ -545,15 +696,25 @@
           return;
         }
         ensurePlaces(current.scene);
+        const mapId = button.getAttribute("data-map");
+        if (mapId && placeById(mapId)) {
+          current.scene.locationId = mapId;
+          current.scene.openId = "";
+          current.scene.lootId = "";
+          current.scene.npcId = "";
+          return;
+        }
         if (button.getAttribute("data-act") === "talk") {
           const npc = npcOf(current.scene, current.scene.openId);
           if (!npc) return;
           npc.lines = npc.lines && npc.lines.length ? npc.lines : ["..."];
-          npc.line = ((npc.line || 0) + 1) % npc.lines.length;
+          const state = npcState(current.scene, npc);
+          rememberSeen(current.scene, npc, { line: (state.line + 1) % npc.lines.length });
         }
         if (button.getAttribute("data-act") === "shop") {
           const npc = npcOf(current.scene, current.scene.openId);
-          if (npc) npc.shopOpen = !npc.shopOpen;
+          if (!npc) return;
+          rememberSeen(current.scene, npc, { shopOpen: !npcState(current.scene, npc).shopOpen });
         }
         if (button.getAttribute("data-act") === "loot-close") current.scene.lootId = "";
         const npcId = button.getAttribute("data-npc");
@@ -579,11 +740,13 @@
 
   let catalog = { npcs: [], goods: [], coins: [] };
   let pageNow = function () { return null; };
+  let publishNow = function () {};
 
   function setContext(opts) {
     opts = opts || {};
     if (opts.catalog) catalog = opts.catalog() || catalog;
     if (opts.page) pageNow = opts.page;
+    if (opts.publish) publishNow = opts.publish;
   }
 
   function editKindOf(page) {
@@ -647,6 +810,7 @@
   let shopMin = "";
   let shopMax = "";
   let codexPane = "npcs";
+  let placeFocus = "";
 
   function generateName(listId) {
     const lib = window.ShirmoNames;
@@ -768,16 +932,35 @@
     const place = placeOf(scene);
     const npc = selectedNpc(scene);
     if (npc) scene.npcId = npc.id;
-    const places = scene.locations.map(function (item) {
-      return '<div class="pick-line"><button type="button" class="pick-row' + (item.id === place.id ? " is-on" : "") + '" data-loc="' + esc(item.id) + '">' +
-        esc(item.name || "Место") + '</button><button type="button" class="danger" data-loc-del="' + esc(item.id) + '">×</button></div>';
-    }).join("");
+    const parent = place.parentId ? placeById(place.parentId) : null;
+    const crumbs = placeCrumbs(place).map(function (item, index, list) {
+      if (index === list.length - 1) return "<b>" + esc(item.name || "Место") + "</b>";
+      return '<button type="button" data-map="' + esc(item.id) + '">' + esc(item.name || "Место") + "</button>";
+    }).join(" / ");
+    const back = parent ? '<button type="button" data-map="' + esc(parent.id) + '">Назад</button>' : "";
+    const placeOn = scene.present === "place";
+    const shown = '<div class="row">' +
+      '<button type="button" data-present="place"' + (placeOn ? ' class="is-on"' : "") + ' title="На экране фон и название места">Локация</button>' +
+      '<button type="button" data-present="cast"' + (placeOn ? "" : ' class="is-on"') + ' title="На экране персонажи этого места">НПС</button></div>';
+    function placeRow(item) {
+      const here = item.id === place.id ? " is-on" : "";
+      const shownHere = placeOn && scene.locationId === item.id ? " is-on" : "";
+      return '<div class="pick-line"><button type="button" class="pick-row' + here + '" data-map="' + esc(item.id) + '">' + esc(item.name || "Место") + '</button><button type="button" class="' + shownHere + '" data-show-place="' + esc(item.id) + '" title="Показать эту локацию на экране">Показать</button></div>';
+    }
+    const level = childrenOf(place.parentId || "").map(placeRow).join("");
+    const below = childrenOf(place.id).map(placeRow).join("");
+    const maps = '<div class="queue-label"><b>Этот уровень</b></div><div class="place-list">' + (level || '<p class="scene-note">Мест нет.</p>') + "</div>" +
+      (below ? '<div class="queue-label"><b>Подлокации</b></div><div class="place-list">' + below + "</div>" : "");
     const people = (place.npcs || []).map(function (item) {
       return '<div class="pick-line"><button type="button" class="pick-row' + (npc && item.id === npc.id ? " is-on" : "") + '" data-pick-place="' + esc(item.id) + '">' +
-        esc(item.name || "Непись") + (item.peaceful ? "" : " · бой") + '</button><button type="button" class="danger" data-npc-del="' + esc(item.id) + '">×</button></div>';
-    }).join("");
-    let detail = '<p class="scene-note">Добавьте НПС на это место.</p>';
-    if (npc) {
+        esc(item.name || "Непись") + (item.peaceful ? "" : " · враг") + "</button></div>";
+    }).join("") || '<p class="scene-note">На этом месте никого нет.</p>';
+    let detail = '<p class="scene-note">Места, персонажи и враги создаются в справочнике.</p>';
+    if (placeOn) {
+      const src = safeSrc(place.background);
+      detail = '<div class="place-preview"><h2>' + esc(place.name || "Место") + "</h2>" +
+        (src ? '<img alt="" src="' + src + '">' : '<p class="scene-note">Фон задаётся справа.</p>') + "</div>";
+    } else if (npc) {
       const lines = (npc.lines || ["..."]).join("\n");
       const stock = npc.peaceful
         ? '<div class="scene-field"><span>Реплики</span><textarea data-lines rows="6">' + esc(lines) + "</textarea></div>" +
@@ -789,22 +972,16 @@
           '<div class="scene-field"><span>Добыча после боя</span>' + lootRows(npc) +
           '<div class="row"><button type="button" data-loot-add>Добавить</button></div>' + rollBox("loot") + "</div>";
       detail = '<div class="row"><input data-npc-name value="' + esc(npc.name || "") + '" aria-label="Имя">' +
-        '<button type="button" data-gen-this>Имя</button>' +
-        '<button type="button" data-save-codex>В справочник</button>' +
         '<label class="check"><input type="checkbox" data-peaceful' + (npc.peaceful ? " checked" : "") + "> Мирный</label></div>" +
-        nameChips() +
         '<div class="row">' + fileBtn('data-file="portrait"', "portrait", "Портрет", Boolean(safeSrc(npc.portrait)), "image/*", "portrait") +
         fileBtn('data-file="picture"', "shot", "Боевой облик", Boolean(safeSrc(npc.picture)), "image/*", "picture") + "</div>" +
         stock;
     }
     root.innerHTML = '<div class="scene-workspace"><div class="place-col">' +
-      '<div class="queue-label"><b>Места</b><button type="button" data-loc-add>+</button></div>' +
-      '<div class="place-list">' + places + "</div>" +
-      '<input data-loc-name value="' + esc(place.name || "") + '" aria-label="Название места">' +
-      '<div class="queue-label"><b>На месте</b><button type="button" data-place-npc>+</button></div>' +
-      '<div class="row"><input data-new-name placeholder="Бандит" aria-label="Имя нового НПС">' +
-      '<label class="check"><input type="checkbox" data-own' + (ownName ? " checked" : "") + "> Своё имя</label></div>" +
-      nameChips() +
+      '<div class="row">' + back + "</div>" + shown +
+      '<div class="place-crumbs">' + crumbs + "</div>" +
+      maps +
+      '<div class="queue-label"><b>НПС</b></div>' +
       '<div class="place-list">' + people + "</div></div>" +
       '<div class="scene-main"><div class="scene-form">' + detail + "</div></div>" +
       sidePanel(place, "talk") + "</div>";
@@ -844,6 +1021,17 @@
     function again() {
       onChange();
       if (root.isConnected) mountTalk(root, page, onChange);
+    }
+    function showToPlayer() {
+      const placeId = scene.locationId;
+      const mode = scene.present === "place" ? "place" : "cast";
+      if (root.isConnected) mountTalk(root, page, onChange);
+      publishNow(function (live) {
+        live.present = mode;
+        if (placeId) live.locationId = placeId;
+        live.openId = "";
+        if (mode === "place") live.lootId = "";
+      });
     }
     const locName = root.querySelector("[data-loc-name]");
     if (locName) locName.addEventListener("input", function () {
@@ -891,11 +1079,14 @@
         onChange();
       });
     });
-    root.querySelectorAll("[data-loc]").forEach(function (button) {
+    root.querySelectorAll("[data-map]").forEach(function (button) {
       button.addEventListener("click", function () {
-        scene.locationId = button.getAttribute("data-loc");
+        const id = button.getAttribute("data-map");
+        if (!placeById(id)) return;
+        scene.locationId = id;
         const next = placeOf(scene);
         scene.npcId = next.npcs[0] ? next.npcs[0].id : "";
+        scene.openId = "";
         again();
       });
     });
@@ -903,6 +1094,28 @@
       button.addEventListener("click", function () {
         scene.npcId = button.getAttribute("data-pick-place");
         again();
+      });
+    });
+    root.querySelectorAll("[data-present]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        scene.present = button.getAttribute("data-present") === "place" ? "place" : "cast";
+        if (scene.present === "place") {
+          scene.openId = "";
+          scene.lootId = "";
+        }
+        showToPlayer();
+      });
+    });
+    root.querySelectorAll("[data-show-place]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const id = button.getAttribute("data-show-place");
+        if (!placeById(id)) return;
+        scene.locationId = id;
+        scene.present = "place";
+        scene.openId = "";
+        scene.lootId = "";
+        scene.npcId = "";
+        showToPlayer();
       });
     });
     const addPlace = root.querySelector("[data-loc-add]");
@@ -1117,7 +1330,17 @@
     });
   }
 
-  function actorCard(scene, person, index) {
+  function moveCell(at) {
+    return '<td class="queue-move"><span class="drag-grip" draggable="true" data-drag data-at="' + at + '" title="Перетащить. Только в панели мастера">⋮⋮</span></td>';
+  }
+
+  function separatorRow(row, at) {
+    return '<tr class="queue-sep">' + moveCell(at) +
+      '<td colspan="12"><input data-sep="' + esc(row.id) + '" value="' + esc(row.text || "") + '" placeholder="Разделитель" aria-label="Разделитель"></td>' +
+      '<td><button type="button" class="danger" data-sep-del="' + esc(row.id) + '" title="Убрать разделитель">×</button></td></tr>';
+  }
+
+  function actorCard(scene, person, index, at) {
     const active = person.id === scene.activeId ? " active-edit" : "";
     const side = person.side === "npc" ? "npc" : "player";
     const roll = side === "npc"
@@ -1152,7 +1375,8 @@
         '<button type="button" class="boss-btn' + (person.boss ? " is-on" : "") + '" data-boss data-i="' + index + '" title="Полоска на экране игроков">Босс</button></span>'
       : "";
     return '<tr class="' + active + (person.dead ? " is-dead" : "") + '">' +
-      '<td><input class="num" data-actor="init" data-i="' + index + '" type="number" value="' + esc(person.init) + '" aria-label="Инициатива"></td>' +
+      moveCell(at) +
+      '<td><input class="num" data-actor="init" data-i="' + index + '" data-who="' + esc(person.id) + '" type="number" value="' + esc(person.init) + '" aria-label="Инициатива"></td>' +
       "<td>" + roll + "</td>" +
       '<td><div class="side-pick">' +
       '<button type="button" class="side-btn' + (side === "player" ? " is-on" : "") + '" data-side-set="player" data-i="' + index + '" title="Игрок">' + icon("player") + "</button>" +
@@ -1171,15 +1395,20 @@
   function mountInit(root, page, onChange) {
     const scene = draftScene(page);
     ensureInit(scene);
-    const rows = scene.actors.map(function (person, index) {
-      return actorCard(scene, person, index);
+    if (scene.autoSort) sortLayout(scene);
+    const rows = scene.layout.map(function (row, at) {
+      if (row.kind === "sep") return separatorRow(row, at);
+      const index = scene.actors.findIndex(function (person) { return person.id === row.id; });
+      if (index < 0) return "";
+      return actorCard(scene, scene.actors[index], index, at);
     }).join("");
     root.innerHTML = '<div class="scene-workspace"><div class="scene-main">' +
-      '<div class="queue-label">Очередь <span class="hint" tabindex="0" aria-label="Подсказка" data-tip="Число сверху, на экране слева те, у кого оно больше. Одинаковые числа стоят под одной скобкой.">?</span></div>' +
-      '<table class="cast"><thead><tr><th>Число</th><th></th><th></th><th>Имя</th><th>Оружие</th><th>Урон</th><th>ХП</th><th></th><th></th><th></th><th>Статус</th><th></th><th></th></tr></thead><tbody>' +
+      '<div class="queue-label">Очередь <button type="button" data-auto-sort' + (scene.autoSort ? ' class="is-on"' : "") + ' title="Новые и смена числа сами встают по убыванию">По числу</button><span class="hint" tabindex="0" aria-label="Подсказка" data-tip="Число сверху, на экране слева те, у кого оно больше. Одинаковые числа стоят под одной скобкой. Порядок строк перетаскивается и виден только мастеру.">?</span></div>' +
+      '<table class="cast"><thead><tr><th></th><th>Число</th><th></th><th></th><th>Имя</th><th>Оружие</th><th>Урон</th><th>ХП</th><th></th><th></th><th></th><th>Статус</th><th></th><th></th></tr></thead><tbody>' +
       rows + "</tbody></table>" +
       '<div class="scene-field"><span class="queue-label">Лог боя <button type="button" data-clear-log>Очистить</button></span><textarea data-log rows="4">' + esc(scene.log || "") + "</textarea></div>" +
       '<div class="row"><button type="button" data-add>Добавить</button>' +
+      '<button type="button" data-sep-add title="Полоса только в очереди мастера">Разделитель</button>' +
       '<button type="button" data-pick-codex>Из справочника</button>' +
       '<button type="button" class="primary" data-next>Следующий ход</button></div></div>' +
       sidePanel(scene, "initiative") + "</div>";
@@ -1235,6 +1464,17 @@
         const key = input.getAttribute("data-actor");
         person[key] = key === "init" || key === "hp" || key === "hpMax" ? Number(input.value) : input.value;
         onChange();
+        if (key === "init" && scene.autoSort && sortLayout(scene)) {
+          const id = person.id;
+          mountInit(root, page, onChange);
+          const fields = root.querySelectorAll('[data-actor="init"]');
+          for (let i = 0; i < fields.length; i++) {
+            if (fields[i].getAttribute("data-who") === id) {
+              fields[i].focus();
+              break;
+            }
+          }
+        }
       });
     });
     const log = root.querySelector("[data-log]");
@@ -1306,10 +1546,14 @@
         if (!person) return;
         const result = 1 + Math.floor(Math.random() * 20);
         person.init = result;
-        const input = button.closest("tr").querySelector("[data-actor='init']");
-        if (input) input.value = String(result);
         publishRoll(result, person.name || "Непись");
         onChange();
+        if (scene.autoSort && sortLayout(scene)) {
+          mountInit(root, page, onChange);
+          return;
+        }
+        const input = button.closest("tr").querySelector("[data-actor='init']");
+        if (input) input.value = String(result);
       });
     });
     root.querySelectorAll("[data-roll-dmg]").forEach(function (button) {
@@ -1405,6 +1649,81 @@
         });
       });
     }
+    const sortBtn = root.querySelector("[data-auto-sort]");
+    if (sortBtn) {
+      sortBtn.addEventListener("click", function () {
+        commit(root, page);
+        scene.autoSort = !scene.autoSort;
+        onChange();
+        mountInit(root, page, onChange);
+      });
+    }
+    let dragFrom = -1;
+    root.querySelectorAll("[data-drag]").forEach(function (grip) {
+      grip.addEventListener("dragstart", function (event) {
+        dragFrom = Number(grip.getAttribute("data-at"));
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(dragFrom));
+        const tr = grip.closest("tr");
+        if (tr) tr.classList.add("is-dragging");
+      });
+      grip.addEventListener("dragend", function () {
+        dragFrom = -1;
+        root.querySelectorAll("tr.is-dragging, tr.is-drop").forEach(function (tr) {
+          tr.classList.remove("is-dragging");
+          tr.classList.remove("is-drop");
+        });
+      });
+    });
+    root.querySelectorAll("tbody tr").forEach(function (tr) {
+      tr.addEventListener("dragover", function (event) {
+        if (dragFrom < 0) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        tr.classList.add("is-drop");
+      });
+      tr.addEventListener("dragleave", function (event) {
+        if (tr.contains(event.relatedTarget)) return;
+        tr.classList.remove("is-drop");
+      });
+      tr.addEventListener("drop", function (event) {
+        event.preventDefault();
+        const grip = tr.querySelector("[data-drag]");
+        const to = grip ? Number(grip.getAttribute("data-at")) : -1;
+        const from = dragFrom;
+        dragFrom = -1;
+        if (from < 0 || to < 0 || from === to) return;
+        commit(root, page);
+        placeLayout(scene, from, to);
+        onChange();
+        mountInit(root, page, onChange);
+      });
+    });
+    root.querySelectorAll("[data-sep]").forEach(function (input) {
+      input.addEventListener("input", function () {
+        const row = (scene.layout || []).find(function (item) { return item.id === input.getAttribute("data-sep"); });
+        if (row) row.text = input.value;
+        onChange();
+      });
+    });
+    root.querySelectorAll("[data-sep-del]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const id = button.getAttribute("data-sep-del");
+        scene.layout = (scene.layout || []).filter(function (row) { return row.id !== id; });
+        onChange();
+        mountInit(root, page, onChange);
+      });
+    });
+    const sepAdd = root.querySelector("[data-sep-add]");
+    if (sepAdd) {
+      sepAdd.addEventListener("click", function () {
+        commit(root, page);
+        ensureLayout(scene);
+        scene.layout.push({ kind: "sep", id: freshId(), text: "" });
+        onChange();
+        mountInit(root, page, onChange);
+      });
+    }
     root.querySelector("[data-add]").addEventListener("click", function () {
       commit(root, page);
       const top = scene.actors.reduce(function (max, person) { return Math.max(max, Number(person.init) || 0); }, 0);
@@ -1484,6 +1803,9 @@
       if (typeof from.scene.line === "number") to.scene.line = from.scene.line;
       to.scene.shopOpen = Boolean(from.scene.shopOpen);
       to.scene.openId = from.scene.openId || "";
+      if (from.scene.locationId) to.scene.locationId = from.scene.locationId;
+      if (from.scene.present === "place" || from.scene.present === "cast") to.scene.present = from.scene.present;
+      to.scene.seen = from.scene.seen || to.scene.seen || null;
       to.scene.lootId = from.scene.lootId || "";
       to.scene.fightNpcId = from.scene.fightNpcId || "";
       to.scene.fight = from.scene.fight || null;
@@ -1555,8 +1877,9 @@
 
   function shopNames() {
     const page = pageNow();
-    const scene = page && page.scenes && page.scenes.talk;
-    if (!scene || !scene.locations) return [];
+    const scene = page && ((page.scenes && page.scenes.talk) || page.scene);
+    if (!scene) return [];
+    ensurePlaces(scene);
     const npc = selectedNpc(scene);
     return ((npc && npc.goods) || []).map(function (item) { return (item.name || "").trim().toLowerCase(); });
   }
@@ -1674,17 +1997,24 @@
     };
   }
 
+  function monsterFace(en) {
+    const map = window.ShirmoFaces || {};
+    const key = String(en || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    return map[key] || "";
+  }
+
   function npcFromMonster(row) {
     const extra = window.ShirmoRu && ShirmoRu.monsters[String(row[0]).toLowerCase()];
     const hp = Number(row[5]) || (extra && extra[3]) || 0;
     const ac = Number(row[4]) || (extra && extra[2]) || 0;
     const cr = row[3] || (extra && extra[1]) || "";
+    const face = monsterFace(row[0]);
     return {
       id: freshId(),
       name: (extra && extra[0]) || row[0],
       note: joinMeta([row[1] || (extra && extra[4]) || "", row[2], cr !== "" ? "CR " + cr : "", ac ? "AC " + ac : "", libBook(row[8])]),
-      portrait: "",
-      picture: "",
+      portrait: face,
+      picture: face,
       weapon: row[6] || "",
       damage: row[7] || "",
       hp: hp,
@@ -1749,11 +2079,89 @@
     const scene = stash(page, "initiative");
     ensureInit(scene);
     const person = newActor(npc.name || "Непись", 10, "npc");
+    person.portrait = npc.portrait || "";
+    person.picture = npc.picture || npc.portrait || "";
     person.weapon = npc.weapon || "";
     person.damage = npc.damage || "";
     person.hp = Number(npc.hp) || 0;
     person.hpMax = Number(npc.hpMax) || 0;
     scene.actors.push(person);
+    ensureLayout(scene);
+    if (scene.autoSort) sortLayout(scene);
+  }
+
+  function placeBranch(parentId, depth) {
+    return childrenOf(parentId).map(function (place) {
+      return '<div class="pick-line" style="margin-left:' + (depth * 14) + 'px"><button type="button" class="pick-row' + (place.id === placeFocus ? " is-on" : "") + '" data-place-pick="' + esc(place.id) + '">' +
+        esc(place.name || "Место") + "</button></div>" + placeBranch(place.id, depth + 1);
+    }).join("");
+  }
+
+  function copyOntoPlace(source, peaceful) {
+    const place = placeById(placeFocus);
+    if (!place || !source || !(source.name || "").trim()) return;
+    const person = blankNpc(source.name);
+    person.portrait = source.portrait || "";
+    person.picture = source.picture || source.portrait || "";
+    person.weapon = source.weapon || "";
+    person.damage = source.damage || "";
+    person.hp = Number(source.hp) || 0;
+    person.hpMax = Number(source.hpMax) || Number(source.hp) || 0;
+    person.peaceful = Boolean(peaceful);
+    if (!person.peaceful) person.party = [npcActor(person)];
+    place.npcs = place.npcs || [];
+    place.npcs.push(person);
+  }
+
+  function spawnOnPlace(name, peaceful) {
+    const card = {
+      id: freshId(),
+      name: name || "Непись",
+      note: "",
+      portrait: "",
+      picture: "",
+      weapon: "",
+      damage: "",
+      hp: 0,
+      hpMax: 0
+    };
+    catalog.npcs = catalog.npcs || [];
+    catalog.npcs.push(card);
+    copyOntoPlace(card, peaceful);
+  }
+
+  function removePlace(id) {
+    const place = placeById(id);
+    if (!place) return;
+    const parent = place.parentId || "";
+    childrenOf(id).forEach(function (child) { child.parentId = parent; });
+    catalog.places = worldPlaces().filter(function (item) { return item.id !== id; });
+    if (!catalog.places.length) catalog.places.push(blankPlace("Место", ""));
+    placeFocus = parent && placeById(parent) ? parent : (childrenOf("")[0] || catalog.places[0]).id;
+  }
+
+  function placePane() {
+    const page = pageNow();
+    const talk = page && page.scenes && page.scenes.talk;
+    if (talk) ensurePlaces(talk);
+    const places = worldPlaces();
+    if (!places.length) places.push(blankPlace("Место", ""));
+    if (!placeById(placeFocus)) placeFocus = (childrenOf("")[0] || places[0]).id;
+    const place = placeById(placeFocus);
+    const stationed = (place.npcs || []).map(function (npc, index) {
+      return '<div class="pick-line"><span class="pick-row">' + esc(npc.name || "Непись") + (npc.peaceful ? "" : " · враг") +
+        '</span><button type="button" class="danger" data-place-npc-del="' + index + '">×</button></div>';
+    }).join("") || '<p class="scene-note">На месте никого нет.</p>';
+    const options = (catalog.npcs || []).map(function (npc, index) {
+      return '<option value="' + index + '">' + esc(npc.name || "Безымянный") + "</option>";
+    }).join("");
+    return '<div class="place-tree">' + (placeBranch("", 0) || '<p class="scene-note">Мест нет.</p>') + "</div>" +
+      '<div class="row"><button type="button" data-place-add>Место</button><button type="button" data-place-child>Подлокация</button><button type="button" class="danger" data-place-del>Удалить</button></div>' +
+      '<label class="scene-field"><span>Название</span><input data-place-name value="' + esc(place.name || "") + '" aria-label="Название места"></label>' +
+      '<div class="scene-field"><span>Фон</span>' + fileBtn("data-place-bg", "image", "Фон", Boolean(safeSrc(place.background)), "image/*", "place-bg") + "</div>" +
+      '<div class="queue-label"><b>На месте</b></div>' + stationed +
+      '<div class="row"><select data-place-from aria-label="Персонаж"><option value="">Из персонажей</option>' + options + '</select><button type="button" data-place-put>На место</button><button type="button" data-place-enemy>Как враг</button></div>' +
+      '<div class="row"><input data-place-new placeholder="Имя" aria-label="Новый персонаж"><button type="button" data-place-create>Персонаж</button><button type="button" data-place-hostile>Враг</button></div>';
   }
 
   function remountCodex(root, onChange) {
@@ -1768,7 +2176,9 @@
     const book = catalog;
     const names = shopNames();
     const npcs = (book.npcs || []).map(function (npc, index) {
-      return '<tr><td><input data-codex-npc="name" data-i="' + index + '" value="' + esc(npc.name || "") + '" aria-label="Имя"></td>' +
+      const face = safeSrc(npc.portrait);
+      return '<tr><td>' + (face ? '<img class="codex-face" alt="" src="' + esc(face) + '">' : "") +
+        '<input data-codex-npc="name" data-i="' + index + '" value="' + esc(npc.name || "") + '" aria-label="Имя"></td>' +
         '<td><input data-codex-npc="note" data-i="' + index + '" value="' + esc(npc.note || "") + '" aria-label="Заметка"></td>' +
         '<td><input data-codex-npc="weapon" data-i="' + index + '" value="' + esc(npc.weapon || "") + '" aria-label="Оружие"></td>' +
         '<td><input data-codex-npc="damage" data-i="' + index + '" value="' + esc(npc.damage || "") + '" aria-label="Урон"></td>' +
@@ -1803,22 +2213,21 @@
     const panes = {
       base: '<div class="chip-row">' + kindChips + '</div><input id="lib-q" value="' + esc(libQuery) + '" placeholder="Поиск по имени, можно по-русски" aria-label="Поиск по базе"><div id="lib-results"></div>',
       npcs: '<div class="row"><input id="new-npc-name" placeholder="Бандит" aria-label="Имя"><label class="check"><input type="checkbox" id="own-name"' + (ownName ? " checked" : "") + '> Своё имя</label><button type="button" data-gen-new>Сгенерировать</button><button type="button" data-npc-add>Добавить</button>' +
-        '<button type="button" data-csv-out="npcs">CSV</button>' + fileBtn("data-csv-in=\"npcs\"", "csv", "Загрузить персонажей", false, ".csv,text/csv") + "</div>" +
+        '<button type="button" data-csv-open="npcs" title="Поля, шаблон, выгрузка и загрузка">CSV</button></div>' +
         nameChips() +
         '<table class="cast"><thead><tr><th>Имя</th><th>Заметка</th><th>Оружие</th><th>Урон</th><th>ХП</th><th>Макс</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>' +
         npcs + "</tbody></table>",
-      goods: '<div class="row"><button type="button" data-good-add>Добавить</button><button type="button" data-csv-out="goods">CSV</button>' +
-        fileBtn("data-csv-in=\"goods\"", "csv", "Загрузить товары", book.goods.length > 0, ".csv,text/csv") + "</div>" +
+      goods: '<div class="row"><button type="button" data-good-add>Добавить</button><button type="button" data-csv-open="goods" title="Поля, шаблон, выгрузка и загрузка">CSV</button></div>' +
         rollBox("catalog") +
         '<table class="cast"><thead><tr><th>Название</th><th>Цена</th><th>Заметка</th><th></th><th></th><th></th></tr></thead><tbody>' +
         goods + "</tbody></table>",
-      coins: '<div class="row"><button type="button" data-coin-add>Добавить</button><button type="button" data-csv-out="coins">CSV</button>' +
-        fileBtn("data-csv-in=\"coins\"", "csv", "Загрузить валюты", book.coins.length > 0, ".csv,text/csv") + "</div>" +
+      coins: '<div class="row"><button type="button" data-coin-add>Добавить</button><button type="button" data-csv-open="coins" title="Поля, шаблон, выгрузка и загрузка">CSV</button></div>' +
         coinLine() +
         '<table class="cast"><thead><tr><th>Монета</th><th>Код</th><th>Медных</th><th></th></tr></thead><tbody>' +
-        coins + "</tbody></table>"
+        coins + "</tbody></table>",
+      places: placePane()
     };
-    const tabs = [["base", "База"], ["npcs", "Персонажи"], ["goods", "Товары"], ["coins", "Валюты"]].map(function (tab) {
+    const tabs = [["base", "База"], ["places", "Места"], ["npcs", "Персонажи"], ["goods", "Товары"], ["coins", "Валюты"]].map(function (tab) {
       return '<button type="button" class="chip-btn' + (codexPane === tab[0] ? " is-on" : "") + '" data-pane="' + tab[0] + '">' + tab[1] + "</button>";
     }).join("");
     const docked = root.id === "codex";
@@ -2032,6 +2441,8 @@
         person.hp = Number(npc.hp) || 0;
         person.hpMax = Number(npc.hpMax) || 0;
         scene.actors.push(person);
+        ensureLayout(scene);
+        if (scene.autoSort) sortLayout(scene);
         onChange();
       });
     });
@@ -2060,62 +2471,309 @@
         mountCodex(root, onChange);
       });
     });
-    root.querySelectorAll("[data-csv-out]").forEach(function (button) {
+    root.querySelectorAll("[data-csv-open]").forEach(function (button) {
       button.addEventListener("click", function () {
-        const kind = button.getAttribute("data-csv-out");
-        if (kind === "npcs") {
-          downloadCsv([["имя", "заметка", "оружие", "урон", "хп", "хпмакс"]].concat(catalog.npcs.map(function (npc) {
-            return [npc.name, npc.note, npc.weapon, npc.damage, npc.hp || 0, npc.hpMax || 0];
-          })), "personazhi.csv");
-        }
-        if (kind === "goods") {
-          downloadCsv([["название", "цена", "заметка"]].concat(catalog.goods.map(function (item) {
-            return [item.name, item.price, item.note];
-          })), "tovary.csv");
-        }
-        if (kind === "coins") {
-          downloadCsv([["монета", "код", "медь"]].concat(catalog.coins.map(function (coin) {
-            return [coin.name, coin.code, coin.copper];
-          })), "valyuty.csv");
-        }
+        openCsv(button.getAttribute("data-csv-open"), root, onChange);
       });
     });
-    root.querySelectorAll("[data-csv-in]").forEach(function (input) {
-      input.addEventListener("change", async function () {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        const rows = parseTable(await file.text());
-        const kind = input.getAttribute("data-csv-in");
-        if (kind === "npcs") {
-          catalog.npcs = rows.filter(function (cols) { return cols[0]; }).map(function (cols) {
-            const prev = (bookKeep(catalog.npcs, cols[0]));
-            return {
-              id: prev && prev.id || freshId(),
-              name: cols[0],
-              note: cols[1] || "",
-              weapon: cols[2] || "",
-              damage: cols[3] || "",
-              hp: Number(cols[4]) || 0,
-              hpMax: Number(cols[5]) || 0,
-              portrait: prev && prev.portrait || "",
-              picture: prev && prev.picture || ""
-            };
-          });
-        }
-        if (kind === "goods") {
-          catalog.goods = rows.filter(function (cols) { return cols[0]; }).map(function (cols) {
-            const prev = bookKeep(catalog.goods, cols[0]);
-            return { id: prev && prev.id || freshId(), name: cols[0], price: cols[1] || "", note: cols[2] || "", image: prev && prev.image || "" };
-          });
-        }
-        if (kind === "coins") {
-          catalog.coins = rows.filter(function (cols) { return cols[0]; }).map(function (cols) {
-            return { id: freshId(), name: cols[0], code: cols[1] || "", copper: Number(cols[2]) || 1 };
-          });
-        }
-        onChange();
-        mountCodex(root, onChange);
+    root.querySelectorAll("[data-place-pick]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        placeFocus = button.getAttribute("data-place-pick");
+        remountCodex(root, onChange);
       });
+    });
+    const placeAdd = root.querySelector("[data-place-add]");
+    if (placeAdd) placeAdd.addEventListener("click", function () {
+      const current = placeById(placeFocus);
+      const next = blankPlace("Место", current ? current.parentId || "" : "");
+      worldPlaces().push(next);
+      placeFocus = next.id;
+      onChange();
+      remountCodex(root, onChange);
+    });
+    const placeChild = root.querySelector("[data-place-child]");
+    if (placeChild) placeChild.addEventListener("click", function () {
+      if (!placeById(placeFocus)) return;
+      const next = blankPlace("Подлокация", placeFocus);
+      worldPlaces().push(next);
+      placeFocus = next.id;
+      onChange();
+      remountCodex(root, onChange);
+    });
+    const placeDel = root.querySelector("[data-place-del]");
+    if (placeDel) placeDel.addEventListener("click", function () {
+      removePlace(placeFocus);
+      onChange();
+      remountCodex(root, onChange);
+    });
+    const placeName = root.querySelector("[data-place-name]");
+    if (placeName) placeName.addEventListener("input", function () {
+      const place = placeById(placeFocus);
+      if (place) place.name = placeName.value;
+      onChange();
+    });
+    root.querySelectorAll("[data-place-npc-del]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const place = placeById(placeFocus);
+        if (!place) return;
+        place.npcs.splice(Number(button.getAttribute("data-place-npc-del")), 1);
+        onChange();
+        remountCodex(root, onChange);
+      });
+    });
+    function chosenCatalog() {
+      const select = root.querySelector("[data-place-from]");
+      if (!select || select.value === "") return null;
+      return (catalog.npcs || [])[Number(select.value)] || null;
+    }
+    const placePut = root.querySelector("[data-place-put]");
+    if (placePut) placePut.addEventListener("click", function () {
+      copyOntoPlace(chosenCatalog(), true);
+      onChange();
+      remountCodex(root, onChange);
+    });
+    const placeEnemy = root.querySelector("[data-place-enemy]");
+    if (placeEnemy) placeEnemy.addEventListener("click", function () {
+      copyOntoPlace(chosenCatalog(), false);
+      onChange();
+      remountCodex(root, onChange);
+    });
+    function typedPlaceName() {
+      const input = root.querySelector("[data-place-new]");
+      return chosenName(input && input.value);
+    }
+    const placeCreate = root.querySelector("[data-place-create]");
+    if (placeCreate) placeCreate.addEventListener("click", function () {
+      spawnOnPlace(typedPlaceName(), true);
+      onChange();
+      remountCodex(root, onChange);
+    });
+    const placeHostile = root.querySelector("[data-place-hostile]");
+    if (placeHostile) placeHostile.addEventListener("click", function () {
+      spawnOnPlace(typedPlaceName(), false);
+      onChange();
+      remountCodex(root, onChange);
+    });
+    const placeBg = root.querySelector("[data-place-bg]");
+    if (placeBg) placeBg.addEventListener("change", async function () {
+      const file = placeBg.files && placeBg.files[0];
+      const place = placeById(placeFocus);
+      if (!file || !place) return;
+      place.background = await readData(file);
+      onChange();
+      remountCodex(root, onChange);
+    });
+    root.querySelectorAll('[data-clear="place-bg"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const place = placeById(placeFocus);
+        if (!place) return;
+        place.background = "";
+        onChange();
+        remountCodex(root, onChange);
+      });
+    });
+  }
+
+  const csvSheets = {
+    npcs: {
+      title: "Персонажи",
+      file: "personazhi.csv",
+      head: ["имя", "заметка", "оружие", "урон", "хп", "хпмакс"],
+      sample: ["Бандит", "у дороги", "меч", "1d8+2", "11", "11"],
+      fields: [
+        ["имя", "обязательно. Дубли ищутся по имени."],
+        ["заметка", "можно пусто"],
+        ["оружие", "можно пусто"],
+        ["урон", "формула, например 1d8+2"],
+        ["хп", "число"],
+        ["хпмакс", "число"]
+      ]
+    },
+    goods: {
+      title: "Товары",
+      file: "tovary.csv",
+      head: ["название", "цена", "заметка"],
+      sample: ["Факел", "1 мм", ""],
+      fields: [
+        ["название", "обязательно. Дубли ищутся по названию."],
+        ["цена", "например 2 зм"],
+        ["заметка", "можно пусто"]
+      ]
+    },
+    coins: {
+      title: "Валюты",
+      file: "valyuty.csv",
+      head: ["монета", "код", "медь"],
+      sample: ["Золотая", "зм", "100"],
+      fields: [
+        ["монета", "обязательно. Дубли ищутся по имени и по коду."],
+        ["код", "коротко, например зм"],
+        ["медь", "сколько медных в одной такой монете"]
+      ]
+    }
+  };
+
+  function csvKey(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function csvRowsOf(kind) {
+    const sheet = csvSheets[kind];
+    if (kind === "npcs") {
+      return [sheet.head].concat((catalog.npcs || []).map(function (npc) {
+        return [npc.name, npc.note, npc.weapon, npc.damage, npc.hp || 0, npc.hpMax || 0];
+      }));
+    }
+    if (kind === "goods") {
+      return [sheet.head].concat((catalog.goods || []).map(function (item) {
+        return [item.name, item.price, item.note];
+      }));
+    }
+    return [sheet.head].concat((catalog.coins || []).map(function (coin) {
+      return [coin.name, coin.code, coin.copper];
+    }));
+  }
+
+  function csvRecord(kind, cols, prev) {
+    const name = String(cols[0] || "").trim();
+    if (kind === "npcs") {
+      return {
+        id: prev && prev.id || freshId(),
+        name: name,
+        note: cols[1] || "",
+        weapon: cols[2] || "",
+        damage: cols[3] || "",
+        hp: Number(cols[4]) || 0,
+        hpMax: Number(cols[5]) || 0,
+        portrait: prev && prev.portrait || "",
+        picture: prev && prev.picture || ""
+      };
+    }
+    if (kind === "goods") {
+      return {
+        id: prev && prev.id || freshId(),
+        name: name,
+        price: cols[1] || "",
+        note: cols[2] || "",
+        image: prev && prev.image || ""
+      };
+    }
+    return { id: prev && prev.id || freshId(), name: name, code: cols[1] || "", copper: Number(cols[2]) || 1 };
+  }
+
+  function csvList(kind) {
+    if (kind === "npcs") return catalog.npcs;
+    if (kind === "goods") return catalog.goods;
+    return catalog.coins;
+  }
+
+  function csvTaken(kind, item, name, code) {
+    if (csvKey(item.name) === name) return true;
+    return kind === "coins" && code && csvKey(item.code) === code;
+  }
+
+  function applyCsv(kind, rows, mode) {
+    catalog.npcs = catalog.npcs || [];
+    catalog.goods = catalog.goods || [];
+    catalog.coins = catalog.coins || [];
+    const fileDupes = [];
+    const exist = [];
+    const seen = {};
+    const clean = [];
+    rows.forEach(function (cols) {
+      const name = String(cols[0] || "").trim();
+      if (!name) return;
+      const keys = ["n:" + csvKey(name)];
+      const codeKey = kind === "coins" ? csvKey(cols[1]) : "";
+      if (codeKey) keys.push("c:" + codeKey);
+      if (keys.some(function (key) { return seen[key]; })) {
+        fileDupes.push(name);
+        return;
+      }
+      keys.forEach(function (key) { seen[key] = true; });
+      clean.push(cols);
+    });
+    const list = csvList(kind);
+    if (mode === "replace") {
+      const next = clean.map(function (cols) {
+        return csvRecord(kind, cols, bookKeep(list, cols[0]));
+      });
+      if (kind === "npcs") catalog.npcs = next;
+      else if (kind === "goods") catalog.goods = next;
+      else catalog.coins = next;
+      return { mode: mode, kept: next.length, added: next.length, fileDupes: fileDupes, exist: exist };
+    }
+    let added = 0;
+    clean.forEach(function (cols) {
+      const nameKey = csvKey(cols[0]);
+      const codeKey = kind === "coins" ? csvKey(cols[1]) : "";
+      const hit = list.some(function (item) { return csvTaken(kind, item, nameKey, codeKey); });
+      if (hit) {
+        exist.push(String(cols[0]).trim());
+        return;
+      }
+      list.push(csvRecord(kind, cols, null));
+      added += 1;
+    });
+    return { mode: mode, kept: list.length, added: added, fileDupes: fileDupes, exist: exist };
+  }
+
+  function csvReport(result) {
+    if (!result) return "";
+    const parts = [];
+    if (result.mode === "replace") parts.push("Текущие записи заменены. В списке " + result.kept + ".");
+    else if (!result.added && !result.fileDupes.length && !result.exist.length) parts.push("В файле нет строк с названием.");
+    else parts.push("Добавлено " + result.added + ".");
+    if (result.fileDupes.length) parts.push("Повторы в файле пропущены: " + result.fileDupes.join(", ") + ".");
+    if (result.exist.length) parts.push("Уже были, не добавлены: " + result.exist.join(", ") + ".");
+    return parts.join(" ");
+  }
+
+  function openCsv(kind, root, onChange) {
+    const sheet = csvSheets[kind];
+    const pop = document.getElementById("pop");
+    if (!sheet || !pop) return;
+    const fields = sheet.fields.map(function (field) {
+      return "<li><b>" + esc(field[0]) + "</b> — " + esc(field[1]) + "</li>";
+    }).join("");
+    pop.classList.remove("hidden");
+    pop.innerHTML = '<div class="pop-card csv-card" role="dialog"><div class="pop-head"><h2>' + esc(sheet.title) +
+      '</h2><button type="button" data-pop-close>×</button></div>' +
+      '<p class="scene-note">Колонки через точку с запятой. Первая строка — названия полей, она не загружается.</p>' +
+      '<ul class="csv-fields">' + fields + "</ul>" +
+      '<div class="row"><label class="check"><input type="radio" name="csv-mode" value="add" checked> Добавить к текущим</label>' +
+      '<label class="check"><input type="radio" name="csv-mode" value="replace"> Удалить текущие</label></div>' +
+      '<div class="row"><button type="button" data-csv-export>Выгрузить текущие</button>' +
+      '<button type="button" data-csv-template>Скачать шаблон</button>' +
+      '<button type="button" data-csv-pick>Загрузить файл</button>' +
+      '<input data-csv-file class="hidden" type="file" accept=".csv,text/csv"></div>' +
+      '<p class="scene-note csv-report" data-csv-report></p></div>';
+    function close() { pop.classList.add("hidden"); }
+    pop.querySelector("[data-pop-close]").addEventListener("click", close);
+    if (pop._csvAway) pop.removeEventListener("click", pop._csvAway);
+    pop._csvAway = function (event) {
+      if (event.target === pop) close();
+    };
+    pop.addEventListener("click", pop._csvAway);
+    pop.querySelector("[data-csv-export]").addEventListener("click", function () {
+      downloadCsv(csvRowsOf(kind), sheet.file);
+    });
+    pop.querySelector("[data-csv-template]").addEventListener("click", function () {
+      downloadCsv([sheet.head, sheet.sample], "shablon-" + sheet.file);
+    });
+    const file = pop.querySelector("[data-csv-file]");
+    pop.querySelector("[data-csv-pick]").addEventListener("click", function () { file.click(); });
+    file.addEventListener("change", async function () {
+      const picked = file.files && file.files[0];
+      file.value = "";
+      if (!picked) return;
+      const modeNode = pop.querySelector('input[name="csv-mode"]:checked');
+      const mode = modeNode && modeNode.value === "replace" ? "replace" : "add";
+      const result = applyCsv(kind, parseTable(await picked.text()), mode);
+      const report = pop.querySelector("[data-csv-report]");
+      if (report) report.textContent = csvReport(result);
+      onChange();
+      if (root.isConnected) mountCodex(root, onChange);
     });
   }
 

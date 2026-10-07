@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ширма</title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=11">
 </head>
 <body>
   <section id="gate" class="gate">
@@ -62,14 +62,33 @@
     <div id="paint" class="paint hidden">
       <div class="paint-tools">
         <button type="button" data-paint-tool="brush" class="is-on">Кисть</button>
+        <button type="button" data-paint-tool="select" title="Клик выбирает картинку, фигуру или линию. Тяните, чтобы сдвинуть. Угол меняет размер, Shift сохраняет пропорции">Выбор</button>
         <button type="button" data-paint-tool="eraser">Ластик</button>
-        <input id="paint-color" type="color" value="#f3ead8" aria-label="Цвет">
+        <button type="button" data-paint-tool="line" title="С Shift линия ложится по диагонали">Линия</button>
+        <button type="button" data-paint-tool="rect" title="С Shift получается квадрат">Прямоугольник</button>
+        <button type="button" data-paint-tool="ellipse" title="С Shift получается круг">Эллипс</button>
+        <label class="paint-size">Линия <input id="paint-color" type="color" value="#f3ead8" aria-label="Цвет линии"></label>
+        <label class="paint-size">Фигура <input id="paint-fill-color" type="color" value="#c45a4a" aria-label="Цвет заливки"></label>
         <label class="paint-size">Толщина <input id="paint-size" type="range" min="1" max="80" value="8"></label>
-        <button type="button" id="paint-undo">Назад</button>
-        <button type="button" id="paint-clear">Очистить</button>
+        <label class="paint-fill"><input id="paint-fill" type="checkbox"> Заливка</label>
+        <button type="button" id="paint-image" title="Выберите файл и протяните рамку на холсте">Картинка</button>
+        <input id="paint-image-file" type="file" accept="image/*" class="hidden">
+        <button type="button" id="paint-undo" title="Ctrl+Z">Назад</button>
+        <button type="button" id="paint-clear">Очистить слой</button>
         <button type="button" id="paint-download">Скачать холст</button>
       </div>
-      <div class="paint-stage"><canvas id="paint-canvas"></canvas></div>
+      <div class="paint-body">
+        <div class="paint-stage"><canvas id="paint-canvas"></canvas></div>
+        <aside class="paint-layers">
+          <div class="paint-layer-bar">
+            <button type="button" id="layer-add" title="Новый слой">+</button>
+            <button type="button" id="layer-up" title="Выше">Выше</button>
+            <button type="button" id="layer-down" title="Ниже">Ниже</button>
+            <button type="button" id="layer-delete" title="Удалить слой">×</button>
+          </div>
+          <div id="paint-layer-list"></div>
+        </aside>
+      </div>
     </div>
     <div id="scene-editor" class="scene-editor hidden"></div>
     <div id="codex" class="codex hidden"></div>
@@ -89,11 +108,12 @@
   <script src="js/library.js"></script>
   <script src="js/ru.js"></script>
   <script src="js/names.js"></script>
+  <script src="js/monster-img.js"></script>
   <script src="js/shoppool.js"></script>
   <script src="js/store.js"></script>
   <script src="js/live.js"></script>
-  <script src="js/scenes.js"></script>
+  <script src="js/scenes.js?v=13"></script>
   <script src="js/dice.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/main.js?v=8"></script>
 </body>
 </html>
