@@ -113,36 +113,44 @@
     }
     window.ShirmoDice.sync(document.getElementById("die"), project.die, project.stage);
     syncHit(document.getElementById("float"), project.hit);
-    syncFx(page.fx);
+    syncFx(page);
     fitFrame();
   }
 
-  const fxNames = { rain: "Дождь", storm: "Шторм", fire: "Огонь" };
+  const fxNames = { rain: "Дождь", storm: "Шторм", fire: "Огонь", smoke: "Дым", fog: "Туман", snow: "Снег" };
+  const fxLive = { smoke: true, fog: true, snow: true, fire: true };
 
-  function syncFx(name) {
+  function syncFx(page) {
+    const name = page && fxNames[page.fx] ? page.fx : "";
+    const particles = Boolean(fxLive[name]);
     const video = document.getElementById("fx");
-    if (!video) return;
-    const next = fxNames[name] ? name : "";
-    if (!next) {
-      video.classList.add("hidden");
-      if (video.getAttribute("src")) {
-        video.removeAttribute("src");
-        video.load();
+    if (video) {
+      if (!name || particles) {
+        video.classList.add("hidden");
+        if (video.getAttribute("src")) {
+          video.removeAttribute("src");
+          video.load();
+        }
+        video.dataset.fx = "";
+      } else if (video.dataset.fx === name) {
+        video.classList.remove("hidden");
+        if (video.paused) video.play().catch(function () {});
+      } else {
+        video.dataset.fx = name;
+        video.muted = true;
+        video.loop = true;
+        video.classList.remove("hidden");
+        video.src = "fx/" + name + ".webm";
+        video.play().catch(function () {});
       }
-      video.dataset.fx = "";
-      return;
     }
-    if (video.dataset.fx === next) {
-      video.classList.remove("hidden");
-      if (video.paused) video.play().catch(function () {});
-      return;
+    if (window.ShirmoFx) {
+      window.ShirmoFx.sync(document.getElementById("fx-live"), particles ? {
+        name: name,
+        rate: page.fxRate,
+        size: page.fxSize
+      } : null);
     }
-    video.dataset.fx = next;
-    video.muted = true;
-    video.loop = true;
-    video.classList.remove("hidden");
-    video.src = "fx/" + next + ".webm";
-    video.play().catch(function () {});
   }
 
   function syncFxButton() {
@@ -155,6 +163,10 @@
     document.querySelectorAll("#fx-menu [data-fx]").forEach(function (button) {
       button.classList.toggle("is-on", (button.getAttribute("data-fx") || "") === name);
     });
+    const rate = document.getElementById("fx-rate");
+    const size = document.getElementById("fx-size");
+    if (rate && document.activeElement !== rate) rate.value = page && page.fxRate != null ? page.fxRate : 78;
+    if (size && document.activeElement !== size) size.value = page && page.fxSize != null ? page.fxSize : 76;
   }
 
   function appendLog(line) {
@@ -1778,10 +1790,22 @@
       const page = activePage();
       if (!page) return;
       page.fx = button.getAttribute("data-fx") || "";
-      document.getElementById("fx-menu").classList.add("hidden");
+      if (fxLive[page.fx] && page.fxRate == null) {
+        page.fxRate = page.fx === "snow" ? 46 : page.fx === "fire" ? 64 : page.fx === "fog" ? 88 : 78;
+        page.fxSize = page.fx === "snow" ? 40 : page.fx === "fire" ? 58 : page.fx === "fog" ? 84 : 76;
+      }
       syncFxButton();
       persist();
     });
+    function tuneFx() {
+      const page = activePage();
+      if (!page) return;
+      page.fxRate = Number(document.getElementById("fx-rate").value);
+      page.fxSize = Number(document.getElementById("fx-size").value);
+      scheduleSave();
+    }
+    document.getElementById("fx-rate").addEventListener("input", tuneFx);
+    document.getElementById("fx-size").addEventListener("input", tuneFx);
     document.addEventListener("click", function () {
       document.getElementById("fx-menu").classList.add("hidden");
     });

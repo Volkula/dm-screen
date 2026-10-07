@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ширма</title>
-  <link rel="stylesheet" href="css/app.css?v=13">
+  <link rel="stylesheet" href="css/app.css?v=14">
 </head>
 <body>
   <section id="gate" class="gate">
@@ -58,6 +58,11 @@
           <button type="button" data-fx="rain">Дождь</button>
           <button type="button" data-fx="storm">Шторм</button>
           <button type="button" data-fx="fire">Огонь</button>
+          <button type="button" data-fx="smoke">Дым</button>
+          <button type="button" data-fx="fog">Туман</button>
+          <button type="button" data-fx="snow">Снег</button>
+          <label class="fx-slider">Частота <input id="fx-rate" type="range" min="1" max="100" value="78"></label>
+          <label class="fx-slider">Размер <input id="fx-size" type="range" min="1" max="100" value="76"></label>
         </div>
       </div>
       <button id="share" class="primary" type="button">Share</button>
@@ -109,6 +114,7 @@
       <iframe id="frame" title="Экран ширмы"></iframe>
       <div id="scene-play" class="hidden"></div>
       <video id="fx" class="hidden" muted loop playsinline></video>
+      <canvas id="fx-live" class="hidden"></canvas>
       <canvas id="die"></canvas>
       <div id="float"></div>
     </div>
@@ -124,6 +130,7 @@
   <script src="js/live.js"></script>
   <script src="js/scenes.js?v=16"></script>
   <script src="js/dice.js?v=2"></script>
-  <script src="js/main.js?v=10"></script>
+  <script src="js/fx.js?v=13"></script>
+  <script src="js/main.js?v=13"></script>
 </body>
 </html>

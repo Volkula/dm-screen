@@ -700,7 +700,7 @@ tr.is-drop { outline: 1px solid var(--brass); }
   transform: rotate(-20deg);
 }
 
-#fx {
+#fx, #fx-live {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -730,11 +730,22 @@ tr.is-drop { outline: 1px solid var(--brass); }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 132px;
+  min-width: 168px;
   padding: 6px;
   background: var(--panel);
   border: 2px solid var(--brass);
 }
+
+.fx-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fx-slider input { width: 100%; }
 
 #fx-open.is-on, .fx-menu button.is-on { color: var(--brass); border-color: var(--brass); }
 
