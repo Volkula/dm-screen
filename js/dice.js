@@ -240,15 +240,18 @@
 
   function play(canvas, die, stage) {
     cancelAnimationFrame(frame);
-    const list = (die.dice && die.dice.length ? die.dice : [{ sides: 20, value: Math.min(20, Math.max(1, Number(die.result) || 1)), sign: 1 }]).map(function (item) {
+    const list = (die.dice && die.dice.length ? die.dice : [{ sides: 20, value: Math.min(20, Math.max(1, Number(die.result) || 1)), sign: 1 }]).map(function (item, index) {
       const sides = Math.min(100, Math.max(2, Number(item.sides) || 20));
       const mesh = meshFor(sides);
       const value = Math.min(sides, Math.max(1, Number(item.value) || 1));
+      let tint = item.tint === "advantage" || item.tint === "disadvantage" ? item.tint : "";
+      if (!tint && index > 0 && (die.mode === "advantage" || die.mode === "disadvantage")) tint = die.mode;
       return {
         mesh: mesh,
         sides: sides,
         value: value,
         sign: item.sign < 0 ? -1 : 1,
+        tint: tint,
         face: (value - 1) % mesh.faces.length,
         axis: norm([Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1])
       };
@@ -315,11 +318,30 @@
           ctx.moveTo(pts[0][0], pts[0][1]);
           for (let p = 1; p < pts.length; p++) ctx.lineTo(pts[p][0], pts[p][1]);
           ctx.closePath();
-          const tone = Math.round(22 + light * 58);
-          ctx.fillStyle = "rgb(" + (tone + 18) + "," + (tone + 8) + "," + tone + ")";
+          let fill;
+          let stroke;
+          let numeral;
+          let edge = 2;
+          if (item.tint === "advantage") {
+            fill = "rgb(" + Math.round(12 + light * 28) + "," + Math.round(150 + light * 90) + "," + Math.round(48 + light * 55) + ")";
+            stroke = "rgba(90, 255, 140, 0.95)";
+            numeral = "#e8ffe8";
+            edge = 3.5;
+          } else if (item.tint === "disadvantage") {
+            fill = "rgb(" + Math.round(190 + light * 50) + "," + Math.round(28 + light * 22) + "," + Math.round(22 + light * 18) + ")";
+            stroke = "rgba(255, 120, 90, 0.95)";
+            numeral = "#ffe8e0";
+            edge = 3.5;
+          } else {
+            const tone = Math.round(22 + light * 58);
+            fill = "rgb(" + (tone + 18) + "," + (tone + 8) + "," + tone + ")";
+            stroke = "rgba(215,181,109," + (0.35 + light * 0.6) + ")";
+            numeral = part.index === item.face && t > 0.82 ? "#f3e2b0" : "#e7c98a";
+          }
+          ctx.fillStyle = fill;
           ctx.fill();
-          ctx.strokeStyle = "rgba(215,181,109," + (0.35 + light * 0.6) + ")";
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = edge;
           ctx.stroke();
           if (part.n[2] > 0.42) {
             let mx = 0;
@@ -328,7 +350,7 @@
             mx /= pts.length;
             my /= pts.length;
             const size = 16 + light * (part.index === item.face ? 26 : 14);
-            ctx.fillStyle = part.index === item.face && t > 0.82 ? "#f3e2b0" : "#e7c98a";
+            ctx.fillStyle = numeral;
             ctx.font = "600 " + Math.round(size * (count === 1 ? 1 : 0.85)) + "px Georgia, serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
@@ -338,16 +360,21 @@
         ctx.restore();
       });
 
-      const showSum = count > 1 || bonus;
+      const showSum = count > 1 || bonus || die.mode === "advantage" || die.mode === "disadvantage";
       let expr = "";
       if (showSum) {
-        expr = list.map(function (item, index) {
-          const n = String(item.value);
-          if (index === 0) return item.sign < 0 ? "−" + n : n;
-          return (item.sign < 0 ? " − " : " + ") + n;
-        }).join("");
-        if (bonus) expr += (bonus > 0 ? " + " : " − ") + Math.abs(bonus);
-        expr += " = " + total;
+        if (die.mode === "advantage" || die.mode === "disadvantage") {
+          expr = list.map(function (item) { return String(item.value); }).join(" · ");
+          expr += (die.mode === "advantage" ? " → макс " : " → мин ") + total;
+        } else {
+          expr = list.map(function (item, index) {
+            const n = String(item.value);
+            if (index === 0) return item.sign < 0 ? "−" + n : n;
+            return (item.sign < 0 ? " − " : " + ") + n;
+          }).join("");
+          if (bonus) expr += (bonus > 0 ? " + " : " − ") + Math.abs(bonus);
+          expr += " = " + total;
+        }
       }
       ctx.fillStyle = "#f4efe6";
       ctx.textAlign = "center";

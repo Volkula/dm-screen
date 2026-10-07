@@ -199,11 +199,36 @@
     }, 2100);
   }
 
-  function publishDie(result, label) {
-    captureEditor();
+  function dieMs() {
     const page = activePage();
     const scene = page && page.scene;
-    const ms = scene && scene.dieMs ? scene.dieMs : 2300;
+    return scene && scene.dieMs ? scene.dieMs : 2300;
+  }
+
+  function publishDie(result, label) {
+    captureEditor();
+    const ms = dieMs();
+    if (result && typeof result === "object" && Array.isArray(result.dice)) {
+      const total = result.total;
+      const mode = result.mode || "";
+      const text = result.log || String(total);
+      appendLog((label ? label + ": " : "Бросок: ") + text);
+      project.die = {
+        id: store.uid(),
+        result: total,
+        dice: result.dice,
+        bonus: result.bonus || 0,
+        total: total,
+        mode: mode,
+        label: label || result.label || "",
+        at: Date.now(),
+        ms: ms
+      };
+      const button = document.getElementById("roll-d20");
+      if (button) button.title = "Выпало " + text;
+      persist();
+      return;
+    }
     appendLog((label ? label + ": " : "Бросок: ") + result);
     project.die = {
       id: store.uid(),
@@ -215,6 +240,101 @@
     const button = document.getElementById("roll-d20");
     if (button) button.title = "Выпало " + result;
     persist();
+  }
+
+  function openDiePop() {
+    const pop = document.getElementById("pop");
+    if (!pop) return;
+    const sides = [4, 6, 8, 10, 12, 20, 100];
+    pop.classList.remove("hidden");
+    pop.innerHTML = '<div class="pop-card die-card" role="dialog" aria-label="Бросок кубиков">' +
+      '<div class="pop-head"><h2>Бросок</h2><button type="button" data-pop-close>×</button></div>' +
+      '<div class="die-pop-row"><label>Количество <input id="die-count" type="number" min="1" max="12" value="1"></label>' +
+      '<div class="die-sides" id="die-sides">' + sides.map(function (n, i) {
+        return '<button type="button" data-sides="' + n + '"' + (n === 20 ? ' class="is-on"' : "") + ">d" + n + "</button>";
+      }).join("") + "</div></div>" +
+      '<div class="die-pop-row die-flags">' +
+      '<label class="check"><input id="die-adv" type="checkbox"> С преимуществом</label>' +
+      '<label class="check"><input id="die-dis" type="checkbox"> С помехой</label></div>' +
+      '<p class="scene-note" id="die-hint">2d20: обычный и зелёный. Берётся больший.</p>' +
+      '<div class="row"><button type="button" class="primary" id="die-throw">Бросить</button></div></div>';
+    const hint = pop.querySelector("#die-hint");
+    const count = pop.querySelector("#die-count");
+    const adv = pop.querySelector("#die-adv");
+    const dis = pop.querySelector("#die-dis");
+    let picked = 20;
+    function syncHint() {
+      const special = adv.checked || dis.checked;
+      count.disabled = special;
+      pop.querySelectorAll("[data-sides]").forEach(function (button) {
+        button.disabled = special;
+      });
+      if (adv.checked) hint.textContent = "2d20: обычный и зелёный. Берётся больший.";
+      else if (dis.checked) hint.textContent = "2d20: обычный и красный. Берётся меньший.";
+      else hint.textContent = Math.min(12, Math.max(1, Number(count.value) || 1)) + "d" + picked;
+    }
+    syncHint();
+    function close() { pop.classList.add("hidden"); }
+    pop.querySelector("[data-pop-close]").addEventListener("click", close);
+    if (pop._dieAway) pop.removeEventListener("click", pop._dieAway);
+    pop._dieAway = function (event) { if (event.target === pop) close(); };
+    pop.addEventListener("click", pop._dieAway);
+    pop.querySelector("#die-sides").addEventListener("click", function (event) {
+      const button = event.target.closest("[data-sides]");
+      if (!button || button.disabled) return;
+      picked = Number(button.getAttribute("data-sides"));
+      pop.querySelectorAll("[data-sides]").forEach(function (node) {
+        node.classList.toggle("is-on", node === button);
+      });
+      syncHint();
+    });
+    adv.addEventListener("change", function () {
+      if (adv.checked) dis.checked = false;
+      syncHint();
+    });
+    dis.addEventListener("change", function () {
+      if (dis.checked) adv.checked = false;
+      syncHint();
+    });
+    count.addEventListener("input", syncHint);
+    pop.querySelector("#die-throw").addEventListener("click", function () {
+      let roll;
+      if (adv.checked || dis.checked) {
+        const a = 1 + Math.floor(Math.random() * 20);
+        const b = 1 + Math.floor(Math.random() * 20);
+        const mode = adv.checked ? "advantage" : "disadvantage";
+        const total = mode === "advantage" ? Math.max(a, b) : Math.min(a, b);
+        roll = {
+          dice: [
+            { sides: 20, value: a, sign: 1 },
+            { sides: 20, value: b, sign: 1, tint: mode }
+          ],
+          total: total,
+          bonus: 0,
+          mode: mode,
+          label: mode === "advantage" ? "Преимущество" : "Помеха",
+          log: a + " · " + b + " → " + total
+        };
+      } else {
+        const n = Math.min(12, Math.max(1, Number(count.value) || 1));
+        const dice = [];
+        let total = 0;
+        for (let i = 0; i < n; i++) {
+          const value = 1 + Math.floor(Math.random() * picked);
+          dice.push({ sides: picked, value: value, sign: 1 });
+          total += value;
+        }
+        roll = {
+          dice: dice,
+          total: total,
+          bonus: 0,
+          label: n + "d" + picked,
+          log: n === 1 ? String(total) : dice.map(function (item) { return item.value; }).join("+") + "=" + total
+        };
+      }
+      close();
+      publishDie(roll, roll.label || "");
+    });
   }
 
   function publishHit(roll, label) {
@@ -1776,7 +1896,7 @@
       publish: publishEditing
     });
     document.getElementById("roll-d20").addEventListener("click", function () {
-      publishDie(1 + Math.floor(Math.random() * 20), "");
+      openDiePop();
     });
     const fxWrap = document.getElementById("fx-wrap");
     fxWrap.addEventListener("click", function (event) { event.stopPropagation(); });

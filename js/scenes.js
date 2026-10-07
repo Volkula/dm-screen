@@ -303,6 +303,8 @@
       stun: '<path d="M12 3l1.8 5.2H19l-4.2 3.2 1.6 5.2L12 13.6 7.6 16.6l1.6-5.2L5 8.2h5.2z" fill="currentColor"/>',
       fear: '<path d="M12 4l8 14H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9v4M12 16h.01" stroke="currentColor" stroke-width="2"/>',
       blind: '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 19L19 5" stroke="currentColor" stroke-width="2"/>',
+      eye: '<path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>',
+      screen: '<rect x="3" y="5" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="2"/>',
       prone: '<path d="M6 8h12M8 12h8M10 16h4" fill="none" stroke="currentColor" stroke-width="2"/>',
       hold: '<circle cx="8" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/>',
       focus: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/>'
@@ -364,7 +366,7 @@
   }
 
   function blankPlace(name, parentId) {
-    return { id: freshId(), name: name || "Место", parentId: parentId || "", background: "", backgroundScale: 100, npcs: [] };
+    return { id: freshId(), name: name || "Место", parentId: parentId || "", background: "", backgroundScale: 100, hidden: false, npcs: [] };
   }
 
   function worldPlaces() {
@@ -379,6 +381,10 @@
   function childrenOf(parentId) {
     const id = parentId || "";
     return worldPlaces().filter(function (place) { return (place.parentId || "") === id; });
+  }
+
+  function visibleChildren(parentId) {
+    return childrenOf(parentId).filter(function (place) { return !place.hidden; });
   }
 
   function placeCrumbs(place) {
@@ -404,6 +410,7 @@
           parentId: "",
           background: place.background || "",
           backgroundScale: place.backgroundScale || 100,
+          hidden: Boolean(place.hidden),
           npcs: place.npcs || []
         });
       });
@@ -530,7 +537,7 @@
     const back = parent
       ? '<button type="button" class="place-map" data-map="' + esc(parent.id) + '"><b>Назад</b><span>' + esc(parent.name || "Место") + "</span></button>"
       : "";
-    const maps = childrenOf(place.id).map(mapButton).join("");
+    const maps = visibleChildren(place.id).map(mapButton).join("");
     const showingPlace = scene.present === "place";
     const cast = showingPlace ? "" : (place.npcs || []).map(function (npc) {
       return '<button type="button" class="place-token' + (npc.peaceful ? " peaceful" : " hostile") + '" data-npc="' + esc(npc.id) + '">' +
@@ -952,7 +959,14 @@
     function placeRow(item) {
       const here = item.id === place.id ? " is-on" : "";
       const shownHere = placeOn && scene.locationId === item.id ? " is-on" : "";
-      return '<div class="pick-line"><button type="button" class="pick-row' + here + '" data-map="' + esc(item.id) + '">' + esc(item.name || "Место") + '</button><button type="button" class="' + shownHere + '" data-show-place="' + esc(item.id) + '" title="Показать эту локацию на экране">Показать</button></div>';
+      const veiled = item.hidden ? " is-hidden" : "";
+      const hideTitle = item.hidden ? "Показать в списке на ширме" : "Скрыть из списка на ширме";
+      return '<div class="pick-line">' +
+        '<button type="button" class="pick-row' + here + veiled + '" data-map="' + esc(item.id) + '">' + esc(item.name || "Место") + "</button>" +
+        '<button type="button" class="side-btn' + (item.hidden ? "" : " is-on") + '" data-hide-place="' + esc(item.id) + '" title="' + hideTitle + '" aria-label="' + hideTitle + '">' +
+        icon(item.hidden ? "blind" : "eye") + "</button>" +
+        '<button type="button" class="side-btn' + shownHere + '" data-show-place="' + esc(item.id) + '" title="Показать на ширме" aria-label="Показать на ширме">' +
+        icon("screen") + "</button></div>";
     }
     const level = childrenOf(place.parentId || "").map(placeRow).join("");
     const below = childrenOf(place.id).map(placeRow).join("");
@@ -1123,6 +1137,14 @@
         scene.lootId = "";
         scene.npcId = "";
         showToPlayer();
+      });
+    });
+    root.querySelectorAll("[data-hide-place]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        const spot = placeById(button.getAttribute("data-hide-place"));
+        if (!spot) return;
+        spot.hidden = !spot.hidden;
+        again();
       });
     });
     const addPlace = root.querySelector("[data-loc-add]");
@@ -2150,8 +2172,12 @@
 
   function placeBranch(parentId, depth) {
     return childrenOf(parentId).map(function (place) {
-      return '<div class="pick-line" style="margin-left:' + (depth * 14) + 'px"><button type="button" class="pick-row' + (place.id === placeFocus ? " is-on" : "") + '" data-place-pick="' + esc(place.id) + '">' +
-        esc(place.name || "Место") + "</button></div>" + placeBranch(place.id, depth + 1);
+      const hideTitle = place.hidden ? "Показать в списке на ширме" : "Скрыть из списка на ширме";
+      return '<div class="pick-line" style="margin-left:' + (depth * 14) + 'px">' +
+        '<button type="button" class="pick-row' + (place.id === placeFocus ? " is-on" : "") + (place.hidden ? " is-hidden" : "") + '" data-place-pick="' + esc(place.id) + '">' +
+        esc(place.name || "Место") + "</button>" +
+        '<button type="button" class="side-btn' + (place.hidden ? "" : " is-on") + '" data-place-veil="' + esc(place.id) + '" title="' + hideTitle + '" aria-label="' + hideTitle + '">' +
+        icon(place.hidden ? "blind" : "eye") + "</button></div>" + placeBranch(place.id, depth + 1);
     }).join("");
   }
 
@@ -2217,6 +2243,7 @@
     return '<div class="place-tree">' + (placeBranch("", 0) || '<p class="scene-note">Мест нет.</p>') + "</div>" +
       '<div class="row"><button type="button" data-place-add>Место</button><button type="button" data-place-child>Подлокация</button><button type="button" class="danger" data-place-del>Удалить</button></div>' +
       '<label class="scene-field"><span>Название</span><input data-place-name value="' + esc(place.name || "") + '" aria-label="Название места"></label>' +
+      '<label class="check"><input type="checkbox" data-place-hidden' + (place.hidden ? " checked" : "") + '> Скрыть с ширмы</label>' +
       '<div class="scene-field"><span>Фон</span>' + fileBtn("data-place-bg", "image", "Фон", Boolean(safeSrc(place.background)), "image/*", "place-bg") + "</div>" +
       '<div class="queue-label"><b>На месте</b></div>' + stationed +
       '<div class="row"><select data-place-from aria-label="Персонаж"><option value="">Из персонажей</option>' + options + '</select><button type="button" data-place-put>На место</button><button type="button" data-place-enemy>Как враг</button></div>' +
@@ -2558,6 +2585,16 @@
         remountCodex(root, onChange);
       });
     });
+    root.querySelectorAll("[data-place-veil]").forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.stopPropagation();
+        const spot = placeById(button.getAttribute("data-place-veil"));
+        if (!spot) return;
+        spot.hidden = !spot.hidden;
+        onChange();
+        remountCodex(root, onChange);
+      });
+    });
     const placeAdd = root.querySelector("[data-place-add]");
     if (placeAdd) placeAdd.addEventListener("click", function () {
       const current = placeById(placeFocus);
@@ -2587,6 +2624,14 @@
       const place = placeById(placeFocus);
       if (place) place.name = placeName.value;
       onChange();
+    });
+    const placeHidden = root.querySelector("[data-place-hidden]");
+    if (placeHidden) placeHidden.addEventListener("change", function () {
+      const place = placeById(placeFocus);
+      if (!place) return;
+      place.hidden = placeHidden.checked;
+      onChange();
+      remountCodex(root, onChange);
     });
     root.querySelectorAll("[data-place-npc-del]").forEach(function (button) {
       button.addEventListener("click", function () {

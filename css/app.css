@@ -935,6 +935,28 @@ tr.is-drop { outline: 1px solid var(--brass); }
 .csv-fields li { margin: 4px 0; }
 .csv-report { min-height: 1.2em; }
 
+.die-card { width: min(420px, 100%); }
+
+.die-pop-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+}
+
+.die-pop-row label { margin: 0; }
+
+.die-pop-row input[type="number"] { width: 72px; }
+
+.die-sides { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.die-sides button.is-on { color: var(--brass); border-color: var(--brass); }
+
+.die-sides button:disabled, .die-pop-row input:disabled { opacity: 0.4; }
+
+.die-flags { gap: 16px; }
+
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 
 .chip-btn.is-on { color: var(--brass); border-color: var(--brass); }
@@ -952,11 +974,22 @@ tr.is-drop { outline: 1px solid var(--brass); }
 
 .place-list { display: flex; flex-direction: column; gap: 4px; }
 
-.pick-line { display: flex; gap: 4px; }
-.pick-line .pick-row { flex: 1; }
+.pick-line { display: flex; gap: 4px; align-items: center; }
+.pick-line .pick-row { flex: 1; min-width: 0; }
 .pick-row { text-align: left; }
 
 .pick-row.is-on { color: var(--brass); border-color: var(--brass); }
+
+.pick-row.is-hidden { opacity: 0.55; }
+
+.pick-line .side-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
 
 .place-screen {
   width: 100%;
