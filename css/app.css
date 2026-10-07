@@ -124,6 +124,16 @@ input, select {
 
 .paint-tools .is-on { color: var(--brass); border-color: var(--brass); }
 
+.paint-style {
+  min-width: 32px;
+  font-family: Arial, sans-serif;
+  font-weight: 700;
+}
+
+.paint-style i { font-style: italic; font-weight: 700; }
+
+.paint-style u, .paint-style s { text-decoration: inherit; }
+
 .paint-body { flex: 1; min-height: 0; display: flex; }
 
 .paint-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; padding: 8px; }
@@ -936,6 +946,33 @@ tr.is-drop { outline: 1px solid var(--brass); }
 .csv-report { min-height: 1.2em; }
 
 .die-card { width: min(420px, 100%); }
+
+.text-card { width: min(420px, 100%); }
+
+.text-pop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  font-family: Arial, sans-serif;
+}
+
+.text-pop-field textarea {
+  min-height: 110px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+  background: #120f0c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.text-pop-actions { margin-top: 4px; }
 
 .die-pop-row {
   display: flex;

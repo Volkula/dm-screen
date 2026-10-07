@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ширма</title>
-  <link rel="stylesheet" href="css/app.css?v=17">
+  <link rel="stylesheet" href="css/app.css?v=19">
 </head>
 <body>
   <section id="gate" class="gate">
@@ -77,15 +77,22 @@
     <div id="paint" class="paint hidden">
       <div class="paint-tools">
         <button type="button" data-paint-tool="brush" class="is-on">Кисть</button>
-        <button type="button" data-paint-tool="select" title="Клик выбирает картинку, фигуру или линию. Тяните, чтобы сдвинуть. Угол меняет размер, Shift сохраняет пропорции">Выбор</button>
+        <button type="button" data-paint-tool="select" title="Клик выбирает картинку, фигуру, линию или текст. Тяните, чтобы сдвинуть. Угол меняет размер, Shift сохраняет пропорции. Двойной клик правит текст">Выбор</button>
         <button type="button" data-paint-tool="eraser">Ластик</button>
         <button type="button" data-paint-tool="line" title="С Shift линия ложится по диагонали">Линия</button>
         <button type="button" data-paint-tool="rect" title="С Shift получается квадрат">Прямоугольник</button>
         <button type="button" data-paint-tool="ellipse" title="С Shift получается круг">Эллипс</button>
+        <button type="button" data-paint-tool="text" title="Клик ставит текст. Двойной клик правит. Только Arial">Текст</button>
         <label class="paint-size">Линия <input id="paint-color" type="color" value="#f3ead8" aria-label="Цвет линии"></label>
         <label class="paint-size">Фигура <input id="paint-fill-color" type="color" value="#c45a4a" aria-label="Цвет заливки"></label>
         <label class="paint-size">Толщина <input id="paint-size" type="range" min="1" max="80" value="8"></label>
         <label class="paint-fill"><input id="paint-fill" type="checkbox"> Заливка</label>
+        <button type="button" id="paint-bold" class="paint-style" title="Полужирный">Ж</button>
+        <button type="button" id="paint-italic" class="paint-style" title="Курсив"><i>К</i></button>
+        <button type="button" id="paint-underline" class="paint-style" title="Подчёркивание"><u>П</u></button>
+        <button type="button" id="paint-strike" class="paint-style" title="Зачёркивание"><s>З</s></button>
+        <label class="paint-fill"><input id="paint-frame" type="checkbox"> Рамка</label>
+        <label class="paint-fill"><input id="paint-outline" type="checkbox"> Обводка</label>
         <button type="button" id="paint-image" title="Выберите файл и протяните рамку на холсте">Картинка</button>
         <input id="paint-image-file" type="file" accept="image/*" class="hidden">
         <button type="button" id="paint-undo" title="Ctrl+Z">Назад</button>
@@ -132,6 +139,6 @@
   <script src="js/scenes.js?v=18"></script>
   <script src="js/dice.js?v=4"></script>
   <script src="js/fx.js?v=13"></script>
-  <script src="js/main.js?v=15"></script>
+  <script src="js/main.js?v=17"></script>
 </body>
 </html>

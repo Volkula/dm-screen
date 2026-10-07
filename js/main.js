@@ -17,6 +17,12 @@
   let paintFillColor = "#c45a4a";
   let paintSize = 8;
   let paintFill = false;
+  let paintBold = false;
+  let paintItalic = false;
+  let paintUnderline = false;
+  let paintStrike = false;
+  let paintFrame = false;
+  let paintOutline = false;
   let paintDrawing = false;
   let paintUndo = [];
   let paintClip = null;
@@ -386,6 +392,120 @@
     return tool === "line" || tool === "rect" || tool === "ellipse";
   }
 
+  function isObjectLayer(layer) {
+    if (!layer) return false;
+    if (layer.kind === "shape") return true;
+    if (layer.kind === "text") return true;
+    return layer.kind === "image" && !!layer.img;
+  }
+
+  function textFontSize(layer) {
+    return Math.max(8, Number(layer && layer.size) || 32);
+  }
+
+  function textFont(layer) {
+    const style = layer && layer.italic ? "italic" : "normal";
+    const weight = layer && layer.bold ? "bold" : "normal";
+    return style + " " + weight + " " + textFontSize(layer) + "px Arial";
+  }
+
+  function textLines(layer) {
+    return String(layer && layer.text != null ? layer.text : "").split("\n");
+  }
+
+  function measureTextBox(layer) {
+    const size = textFontSize(layer);
+    const pad = layer && layer.frame ? Math.max(6, size * 0.22) : Math.max(2, size * 0.08);
+    const lineH = size * 1.25;
+    const probe = document.createElement("canvas").getContext("2d");
+    probe.font = textFont(layer);
+    const lines = textLines(layer);
+    let maxW = 0;
+    for (let i = 0; i < lines.length; i++) {
+      maxW = Math.max(maxW, probe.measureText(lines[i] || " ").width);
+    }
+    return {
+      w: Math.max(8, Math.ceil(maxW + pad * 2)),
+      h: Math.max(8, Math.ceil(Math.max(1, lines.length) * lineH + pad * 2)),
+      pad: pad,
+      lineH: lineH,
+      lines: lines
+    };
+  }
+
+  function fitTextBox(layer) {
+    if (!layer || layer.kind !== "text") return;
+    const box = measureTextBox(layer);
+    layer.w = box.w;
+    layer.h = box.h;
+  }
+
+  function drawTextLayer(ctx, layer) {
+    if (!layer || !String(layer.text || "").length) return;
+    const size = textFontSize(layer);
+    const color = layer.color || paintColor;
+    const box = measureTextBox(layer);
+    const pad = box.pad;
+    ctx.save();
+    ctx.font = textFont(layer);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.globalCompositeOperation = "source-over";
+    if (layer.frame) {
+      ctx.lineWidth = Math.max(1, size / 16);
+      ctx.strokeStyle = color;
+      ctx.strokeRect(layer.x + 0.5, layer.y + 0.5, Math.max(1, layer.w - 1), Math.max(1, layer.h - 1));
+    }
+    let ty = layer.y + pad;
+    for (let i = 0; i < box.lines.length; i++) {
+      const line = box.lines[i];
+      const tx = layer.x + pad;
+      if (layer.outline) {
+        ctx.lineJoin = "round";
+        ctx.miterLimit = 2;
+        ctx.lineWidth = Math.max(2, size / 10);
+        ctx.strokeStyle = "#0d0b09";
+        ctx.strokeText(line, tx, ty);
+      }
+      ctx.fillStyle = color;
+      ctx.fillText(line, tx, ty);
+      const width = ctx.measureText(line || " ").width;
+      if (layer.underline || layer.strike) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, size / 18);
+        if (layer.underline) {
+          const uy = ty + size * 0.92;
+          ctx.beginPath();
+          ctx.moveTo(tx, uy);
+          ctx.lineTo(tx + width, uy);
+          ctx.stroke();
+        }
+        if (layer.strike) {
+          const sy = ty + size * 0.48;
+          ctx.beginPath();
+          ctx.moveTo(tx, sy);
+          ctx.lineTo(tx + width, sy);
+          ctx.stroke();
+        }
+      }
+      ty += box.lineH;
+    }
+    ctx.restore();
+  }
+
+  function textDefaults() {
+    return {
+      bold: paintBold,
+      italic: paintItalic,
+      underline: paintUnderline,
+      strike: paintStrike,
+      frame: paintFrame,
+      outline: paintOutline,
+      color: paintColor,
+      size: Math.max(24, Math.round(paintSize * 3))
+    };
+  }
+
   function layerById(id) {
     for (let i = 0; i < paintLayers.length; i++) {
       if (paintLayers[i].id === id) return paintLayers[i];
@@ -505,7 +625,7 @@
       if (Math.hypot(point.x - layer.x2, point.y - layer.y2) <= half) return "b";
       return "";
     }
-    if (layer.kind !== "image" && layer.kind !== "shape") return "";
+    if (layer.kind !== "image" && layer.kind !== "shape" && layer.kind !== "text") return "";
     if (layer.kind === "image" && !layer.img) return "";
     if (layer.w < 1 || layer.h < 1) return "";
     const points = handlePoints(layer);
@@ -542,6 +662,7 @@
       if (!layer.visible) continue;
       if (layer.kind === "image" && layer.img && hitBody(point, layer)) return layer;
       if (layer.kind === "shape" && hitShape(point, layer)) return layer;
+      if (layer.kind === "text" && String(layer.text || "") && hitBody(point, layer)) return layer;
     }
     return null;
   }
@@ -561,7 +682,7 @@
 
   function drawSelection(ctx) {
     const layer = activeLayer();
-    const selectable = layer && layer.visible && (layer.kind === "image" && layer.img || layer.kind === "shape");
+    const selectable = layer && layer.visible && isObjectLayer(layer);
     if (paintTool !== "select" || !selectable) return;
     const size = handleSize();
     ctx.save();
@@ -603,6 +724,10 @@
       }
       if (layer.kind === "shape") {
         drawVector(ctx, layer);
+        return;
+      }
+      if (layer.kind === "text") {
+        drawTextLayer(ctx, layer);
         return;
       }
       if (layer.canvas) ctx.drawImage(layer.canvas, 0, 0);
@@ -670,6 +795,7 @@
       if (layer.shape === "line") return Math.hypot(layer.x2 - layer.x1, layer.y2 - layer.y1) > 1;
       return layer.w > 1 && layer.h > 1;
     }
+    if (layer.kind === "text") return !!(String(layer.text || "").trim() && layer.w > 0 && layer.h > 0);
     if (layer.kind === "image") return !!(layer.img && layer.w > 0 && layer.h > 0);
     if (!layer.canvas) return false;
     const data = layer.canvas.getContext("2d").getImageData(0, 0, layer.canvas.width, layer.canvas.height).data;
@@ -695,6 +821,17 @@
           x: layer.x, y: layer.y, w: layer.w, h: layer.h,
           x1: layer.x1, y1: layer.y1, x2: layer.x2, y2: layer.y2,
           color: layer.color, fillColor: layer.fillColor, size: layer.size
+        }
+      });
+    } else if (layer.kind === "text") {
+      paintUndo.push({
+        id: layer.id,
+        text: {
+          x: layer.x, y: layer.y, w: layer.w, h: layer.h,
+          text: layer.text, color: layer.color, size: layer.size,
+          bold: !!layer.bold, italic: !!layer.italic,
+          underline: !!layer.underline, strike: !!layer.strike,
+          frame: !!layer.frame, outline: !!layer.outline
         }
       });
     } else if (layer.canvas) {
@@ -914,9 +1051,17 @@
     const stroke = document.getElementById("paint-color");
     const fill = document.getElementById("paint-fill-color");
     const check = document.getElementById("paint-fill");
-    if (!layer || layer.kind !== "shape") return;
+    const size = document.getElementById("paint-size");
+    if (!layer) return;
+    if (layer.kind === "text") {
+      syncTextStyle(layer);
+      return;
+    }
+    if (layer.kind !== "shape") return;
     paintColor = layer.color || paintColor;
     if (stroke) stroke.value = paintColor;
+    paintSize = layer.size || paintSize;
+    if (size) size.value = String(paintSize);
     if (layer.shape === "line") return;
     paintFill = !!layer.fillColor;
     if (check) check.checked = paintFill;
@@ -924,6 +1069,151 @@
       paintFillColor = layer.fillColor;
       if (fill) fill.value = paintFillColor;
     }
+  }
+
+  function markTextStyles() {
+    const map = [
+      ["paint-bold", paintBold],
+      ["paint-italic", paintItalic],
+      ["paint-underline", paintUnderline],
+      ["paint-strike", paintStrike]
+    ];
+    map.forEach(function (pair) {
+      const node = document.getElementById(pair[0]);
+      if (node) node.classList.toggle("is-on", !!pair[1]);
+    });
+    const frame = document.getElementById("paint-frame");
+    const outline = document.getElementById("paint-outline");
+    if (frame) frame.checked = paintFrame;
+    if (outline) outline.checked = paintOutline;
+  }
+
+  function syncTextStyle(layer) {
+    if (!layer || layer.kind !== "text") return;
+    const stroke = document.getElementById("paint-color");
+    const size = document.getElementById("paint-size");
+    paintColor = layer.color || paintColor;
+    if (stroke) stroke.value = paintColor;
+    paintSize = Math.max(1, Math.min(80, Math.round(textFontSize(layer) / 3)));
+    if (size) size.value = String(paintSize);
+    paintBold = !!layer.bold;
+    paintItalic = !!layer.italic;
+    paintUnderline = !!layer.underline;
+    paintStrike = !!layer.strike;
+    paintFrame = !!layer.frame;
+    paintOutline = !!layer.outline;
+    markTextStyles();
+  }
+
+  function commitText(point, value) {
+    const style = textDefaults();
+    const layer = {
+      id: store.uid(),
+      name: "Текст",
+      kind: "text",
+      visible: true,
+      ink: true,
+      ready: true,
+      text: value,
+      x: point.x,
+      y: point.y,
+      w: 0,
+      h: 0,
+      color: style.color,
+      size: style.size,
+      bold: style.bold,
+      italic: style.italic,
+      underline: style.underline,
+      strike: style.strike,
+      frame: style.frame,
+      outline: style.outline
+    };
+    fitTextBox(layer);
+    layer.x = Math.round(point.x - layer.w / 2);
+    layer.y = Math.round(point.y - layer.h / 2);
+    const at = paintLayers.findIndex(function (item) { return item.id === paintActive; });
+    paintLayers.splice(at + 1, 0, layer);
+    paintActive = layer.id;
+    paintTool = "select";
+    markTools();
+    renderLayerList();
+    syncTextStyle(layer);
+    rememberStack({ op: "add", id: layer.id });
+  }
+
+  function openTextPop(initial, onDone) {
+    const pop = document.getElementById("pop");
+    if (!pop) return;
+    pop.classList.remove("hidden");
+    pop.innerHTML = '<div class="pop-card text-card" role="dialog" aria-label="Текст на холсте">' +
+      '<div class="pop-head"><h2>Текст</h2><button type="button" data-pop-close>×</button></div>' +
+      '<label class="text-pop-field">Надпись<textarea id="paint-text-input" rows="4" spellcheck="false"></textarea></label>' +
+      '<div class="row text-pop-actions">' +
+      '<button type="button" class="primary" id="paint-text-ok">Готово</button>' +
+      '<button type="button" data-pop-close>Отмена</button></div></div>';
+    const field = pop.querySelector("#paint-text-input");
+    field.value = initial == null ? "" : String(initial);
+    function close() {
+      pop.classList.add("hidden");
+      if (pop._textKey) {
+        document.removeEventListener("keydown", pop._textKey, true);
+        pop._textKey = null;
+      }
+      if (pop._textAway) {
+        pop.removeEventListener("click", pop._textAway);
+        pop._textAway = null;
+      }
+    }
+    function accept() {
+      const value = field.value;
+      close();
+      if (onDone) onDone(value);
+    }
+    pop.querySelectorAll("[data-pop-close]").forEach(function (button) {
+      button.addEventListener("click", close);
+    });
+    pop.querySelector("#paint-text-ok").addEventListener("click", accept);
+    pop._textAway = function (event) { if (event.target === pop) close(); };
+    pop.addEventListener("click", pop._textAway);
+    pop._textKey = function (event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        accept();
+      }
+    };
+    document.addEventListener("keydown", pop._textKey, true);
+    setTimeout(function () {
+      field.focus();
+      field.select();
+    }, 0);
+  }
+
+  function editTextLayer(layer) {
+    if (!layer || layer.kind !== "text") return;
+    openTextPop(layer.text || "", function (next) {
+      rememberLayer(layer);
+      layer.text = next;
+      fitTextBox(layer);
+      layer.ink = layerHasInk(layer);
+      present();
+      savePaint();
+      scheduleSave();
+    });
+  }
+
+  function paintSelectedText(mutate) {
+    const layer = activeLayer();
+    if (paintTool !== "select" || !layer || layer.kind !== "text") return;
+    mutate(layer);
+    fitTextBox(layer);
+    layer.ink = layerHasInk(layer);
+    savePaint();
+    present();
+    scheduleSave();
   }
 
   function rememberStack(entry) {
@@ -944,6 +1234,23 @@
         color: layer.color,
         fillColor: layer.fillColor || "",
         size: layer.size || 8
+      };
+    }
+    if (layer.kind === "text") {
+      return {
+        kind: "text",
+        name: layer.name,
+        visible: layer.visible !== false,
+        text: layer.text || "",
+        x: layer.x, y: layer.y, w: layer.w, h: layer.h,
+        color: layer.color,
+        size: layer.size || 32,
+        bold: !!layer.bold,
+        italic: !!layer.italic,
+        underline: !!layer.underline,
+        strike: !!layer.strike,
+        frame: !!layer.frame,
+        outline: !!layer.outline
       };
     }
     if (layer.kind === "image" && layer.img) {
@@ -981,6 +1288,24 @@
       layer.color = snap.color || "#f3ead8";
       layer.fillColor = snap.fillColor || "";
       layer.size = snap.size || 8;
+      return layer;
+    }
+    if (snap.kind === "text") {
+      layer.name = snap.name || "Текст";
+      layer.text = snap.text || "";
+      layer.x = snap.x || 0;
+      layer.y = snap.y || 0;
+      layer.w = snap.w || 0;
+      layer.h = snap.h || 0;
+      layer.color = snap.color || "#f3ead8";
+      layer.size = snap.size || 32;
+      layer.bold = !!snap.bold;
+      layer.italic = !!snap.italic;
+      layer.underline = !!snap.underline;
+      layer.strike = !!snap.strike;
+      layer.frame = !!snap.frame;
+      layer.outline = !!snap.outline;
+      if (!layer.w || !layer.h) fitTextBox(layer);
       return layer;
     }
     layer.src = snap.src || "";
@@ -1136,6 +1461,27 @@
       scheduleSave();
       return;
     }
+    if (shot.text && layer.kind === "text") {
+      layer.x = shot.text.x;
+      layer.y = shot.text.y;
+      layer.w = shot.text.w;
+      layer.h = shot.text.h;
+      layer.text = shot.text.text;
+      layer.color = shot.text.color;
+      layer.size = shot.text.size;
+      layer.bold = !!shot.text.bold;
+      layer.italic = !!shot.text.italic;
+      layer.underline = !!shot.text.underline;
+      layer.strike = !!shot.text.strike;
+      layer.frame = !!shot.text.frame;
+      layer.outline = !!shot.text.outline;
+      layer.ink = layerHasInk(layer);
+      syncTextStyle(layer);
+      present();
+      savePaint();
+      scheduleSave();
+      return;
+    }
     if (shot.box && layer.kind === "image") {
       layer.x = shot.box.x;
       layer.y = shot.box.y;
@@ -1231,6 +1577,24 @@
           size: layer.size || 8
         };
       }
+      if (layer.kind === "text") {
+        return {
+          id: layer.id,
+          name: layer.name,
+          visible: layer.visible,
+          kind: "text",
+          text: layer.text || "",
+          x: layer.x, y: layer.y, w: layer.w, h: layer.h,
+          color: layer.color,
+          size: layer.size || 32,
+          bold: !!layer.bold,
+          italic: !!layer.italic,
+          underline: !!layer.underline,
+          strike: !!layer.strike,
+          frame: !!layer.frame,
+          outline: !!layer.outline
+        };
+      }
       return {
         id: layer.id,
         name: layer.name,
@@ -1284,6 +1648,32 @@
           fillColor: spec.fillColor || "",
           size: Number(spec.size) || 8
         };
+      }
+      if (spec.kind === "text") {
+        const layer = {
+          id: spec.id || store.uid(),
+          name: spec.name || "Текст",
+          kind: "text",
+          visible: spec.visible !== false,
+          ink: true,
+          ready: true,
+          text: spec.text || "",
+          x: Number(spec.x) || 0,
+          y: Number(spec.y) || 0,
+          w: Number(spec.w) || 0,
+          h: Number(spec.h) || 0,
+          color: spec.color || "#f3ead8",
+          size: Number(spec.size) || 32,
+          bold: !!spec.bold,
+          italic: !!spec.italic,
+          underline: !!spec.underline,
+          strike: !!spec.strike,
+          frame: !!spec.frame,
+          outline: !!spec.outline
+        };
+        if (!layer.w || !layer.h) fitTextBox(layer);
+        layer.ink = layerHasInk(layer);
+        return layer;
       }
       if (spec.kind === "image") {
         const layer = blankImageLayer(spec.name || "Картинка");
@@ -1380,16 +1770,36 @@
       drawContained(view, paintPending.img, box.x, box.y, box.w, box.h);
     }
 
+    canvas.addEventListener("dblclick", function (event) {
+      if (viewCodex || paintTool !== "select") return;
+      const point = paintPoint(event, canvas);
+      const layer = objectAt(point) || activeLayer();
+      if (layer && layer.kind === "text" && hitBody(point, layer)) editTextLayer(layer);
+    });
+
     canvas.addEventListener("pointerdown", function (event) {
       if (viewCodex) return;
       paintStart = paintPoint(event, canvas);
+      if (paintTool === "text") {
+        const point = { x: paintStart.x, y: paintStart.y };
+        openTextPop("Текст", function (value) {
+          if (!String(value || "").trim()) return;
+          commitText(point, value);
+          savePaint();
+          present();
+          scheduleSave();
+        });
+        return;
+      }
       if (paintTool === "select") {
         const current = activeLayer();
         let handle = "";
         let layer = null;
-        if (current && current.visible && (current.kind === "image" && current.img || current.kind === "shape")) {
+        if (current && current.visible && isObjectLayer(current)) {
           handle = hitHandle(paintStart, current);
-          const onBody = current.kind === "image" ? hitBody(paintStart, current) : hitShape(paintStart, current);
+          const onBody = current.kind === "shape"
+            ? hitShape(paintStart, current)
+            : hitBody(paintStart, current);
           if (handle || onBody) layer = current;
         }
         if (!layer) layer = objectAt(paintStart);
@@ -1400,7 +1810,8 @@
         paintDrag = {
           mode: handle ? "resize" : "move",
           handle: handle,
-          box: dragBox(layer)
+          box: dragBox(layer),
+          startSize: layer.kind === "text" ? textFontSize(layer) : 0
         };
         rememberLayer(layer);
         paintDrawing = true;
@@ -1439,8 +1850,12 @@
       const point = paintPoint(event, canvas);
       if (!paintDrawing && paintTool === "select") {
         const current = activeLayer();
-        const handle = current && (current.kind === "image" || current.kind === "shape") ? hitHandle(point, current) : "";
-        const onBody = current && (current.kind === "image" ? hitBody(point, current) : current.kind === "shape" && hitShape(point, current));
+        const handle = current && isObjectLayer(current) ? hitHandle(point, current) : "";
+        const onBody = current && (
+          current.kind === "shape"
+            ? hitShape(point, current)
+            : (current.kind === "image" || current.kind === "text") && hitBody(point, current)
+        );
         if (handle) canvas.style.cursor = handle === "a" || handle === "b" ? "crosshair" : cursorFor(handle);
         else if (onBody || objectAt(point)) canvas.style.cursor = "move";
         else canvas.style.cursor = "default";
@@ -1449,7 +1864,7 @@
       if (!paintDrawing) return;
       if (paintTool === "select" && paintDrag) {
         const layer = activeLayer();
-        if (!layer || layer.kind !== "image" && layer.kind !== "shape") return;
+        if (!layer || !isObjectLayer(layer)) return;
         const dx = point.x - paintStart.x;
         const dy = point.y - paintStart.y;
         if (paintDrag.mode === "move" && layer.shape === "line") {
@@ -1460,7 +1875,16 @@
         } else if (paintDrag.mode === "move") {
           layer.x = paintDrag.box.x + dx;
           layer.y = paintDrag.box.y + dy;
-        } else applyResize(layer, paintDrag.handle, point, event.shiftKey);
+        } else {
+          applyResize(layer, paintDrag.handle, point, event.shiftKey);
+          if (layer.kind === "text") {
+            const baseW = Math.max(1, paintDrag.box.w);
+            const baseH = Math.max(1, paintDrag.box.h);
+            const ratio = Math.max(layer.w / baseW, layer.h / baseH);
+            layer.size = Math.max(8, Math.round((paintDrag.startSize || 32) * ratio));
+            fitTextBox(layer);
+          }
+        }
         present();
         return;
       }
@@ -1506,6 +1930,7 @@
     document.getElementById("paint-color").addEventListener("input", function (event) {
       paintColor = event.target.value;
       paintSelectedShape(function (layer) { layer.color = paintColor; });
+      paintSelectedText(function (layer) { layer.color = paintColor; });
     });
     const fillColor = document.getElementById("paint-fill-color");
     if (fillColor) fillColor.addEventListener("input", function (event) {
@@ -1521,6 +1946,7 @@
     document.getElementById("paint-size").addEventListener("input", function (event) {
       paintSize = Number(event.target.value) || 8;
       paintSelectedShape(function (layer) { layer.size = paintSize; });
+      paintSelectedText(function (layer) { layer.size = Math.max(8, Math.round(paintSize * 3)); });
     });
     document.getElementById("paint-fill").addEventListener("change", function (event) {
       paintFill = !!event.target.checked;
@@ -1529,6 +1955,38 @@
         layer.fillColor = paintFill ? paintFillColor : "";
       });
     });
+    function bindTextToggle(id, key) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      node.addEventListener("click", function () {
+        if (key === "bold") paintBold = !paintBold;
+        if (key === "italic") paintItalic = !paintItalic;
+        if (key === "underline") paintUnderline = !paintUnderline;
+        if (key === "strike") paintStrike = !paintStrike;
+        markTextStyles();
+        paintSelectedText(function (layer) {
+          layer.bold = paintBold;
+          layer.italic = paintItalic;
+          layer.underline = paintUnderline;
+          layer.strike = paintStrike;
+        });
+      });
+    }
+    bindTextToggle("paint-bold", "bold");
+    bindTextToggle("paint-italic", "italic");
+    bindTextToggle("paint-underline", "underline");
+    bindTextToggle("paint-strike", "strike");
+    const frameBox = document.getElementById("paint-frame");
+    if (frameBox) frameBox.addEventListener("change", function (event) {
+      paintFrame = !!event.target.checked;
+      paintSelectedText(function (layer) { layer.frame = paintFrame; });
+    });
+    const outlineBox = document.getElementById("paint-outline");
+    if (outlineBox) outlineBox.addEventListener("change", function (event) {
+      paintOutline = !!event.target.checked;
+      paintSelectedText(function (layer) { layer.outline = paintOutline; });
+    });
+    markTextStyles();
     document.getElementById("paint-image").addEventListener("click", function () {
       document.getElementById("paint-image-file").click();
     });
@@ -1566,6 +2024,11 @@
         layer.x2 = layer.x1;
         layer.y2 = layer.y1;
         layer.fillColor = "";
+      } else if (layer.kind === "text") {
+        layer.text = "";
+        layer.ink = false;
+        layer.w = 0;
+        layer.h = 0;
       } else if (layer.canvas) {
         const ctx = layer.canvas.getContext("2d");
         ctx.globalCompositeOperation = "source-over";
@@ -1648,7 +2111,7 @@
       }
       if (event.target.closest("input")) return;
       paintActive = layer.id;
-      if (layer.kind === "image" || layer.kind === "shape") {
+      if (layer.kind === "image" || layer.kind === "shape" || layer.kind === "text") {
         paintTool = "select";
         canvas.style.cursor = "default";
         markTools();
