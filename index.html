@@ -66,10 +66,11 @@
         </div>
       </div>
       <button id="share" class="primary" type="button">Share</button>
-      <button id="export-json" type="button">JSON</button>
-      <button id="export-zip" type="button">ZIP</button>
-      <button id="import-file" type="button">Открыть</button>
+      <button id="export-json" type="button" title="Скачать проект файлом JSON">JSON</button>
+      <button id="export-zip" type="button" title="Скачать проект архивом ZIP">ZIP</button>
+      <button id="import-file" type="button" title="Вернуть скачанный JSON или ZIP">Загрузить</button>
       <input id="import-input" type="file" accept="application/json,.json,application/zip,.zip" class="hidden">
+      <button id="wipe" class="danger" type="button" title="Стереть проект в этом браузере. Скачанный файл не трогает">Удалить локальные данные</button>
       <button id="logout" type="button">Выйти</button>
     </div>
     <div id="gjs" class="hidden"></div>
@@ -126,11 +127,11 @@
   <script src="js/names.js"></script>
   <script src="js/monster-img.js"></script>
   <script src="js/shoppool.js"></script>
-  <script src="js/store.js"></script>
+  <script src="js/store.js?v=2"></script>
   <script src="js/live.js"></script>
   <script src="js/scenes.js?v=16"></script>
   <script src="js/dice.js?v=2"></script>
   <script src="js/fx.js?v=13"></script>
-  <script src="js/main.js?v=13"></script>
+  <script src="js/main.js?v=14"></script>
 </body>
 </html>

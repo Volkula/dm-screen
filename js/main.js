@@ -1953,6 +1953,15 @@
       sessionStorage.removeItem("shirmo-ok");
       location.href = "index.html";
     });
+
+    document.getElementById("wipe").addEventListener("click", function () {
+      if (!confirm("Удалить локальные данные в этом браузере? Скачанный JSON или ZIP останется на диске.")) return;
+      store.dropProject().then(function () {
+        sessionStorage.removeItem("shirmo-ok");
+        live.touch();
+        location.href = "index.html";
+      });
+    });
   }
 
   function bindGate() {

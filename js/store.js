@@ -29,6 +29,17 @@
     });
   }
 
+  function dropProject() {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").delete("project");
+        tx.oncomplete = function () { db.close(); resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    });
+  }
+
   function saveProject(project) {
     return openDb().then(function (db) {
       return new Promise(function (resolve, reject) {
@@ -221,7 +232,10 @@
         paint: page.paint || "",
         paintLayers: Array.isArray(page.paintLayers) ? page.paintLayers : null,
         scene: page.scene || null,
-        scenes: page.scenes || null
+        scenes: page.scenes || null,
+        fx: page.fx || "",
+        fxRate: page.fxRate,
+        fxSize: page.fxSize
       };
     });
     const known = project.pages.some(function (page) { return page.id === data.activePageId; });
@@ -238,6 +252,7 @@
     uid: uid,
     getProject: getProject,
     saveProject: saveProject,
+    dropProject: dropProject,
     createProject: createProject,
     blankPage: blankPage,
     emptyScene: emptyScene,
