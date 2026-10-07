@@ -164,14 +164,22 @@
     persist();
   }
 
-  function publishHit(total, label) {
+  function publishHit(roll, label) {
     captureEditor();
+    const total = roll && typeof roll === "object" ? roll.total : roll;
     appendLog((label ? label + ": " : "Урон: ") + total);
-    project.hit = {
+    const page = activePage();
+    const scene = page && page.scene;
+    const ms = scene && scene.dieMs ? scene.dieMs : 2300;
+    project.die = {
       id: store.uid(),
+      result: total,
+      dice: roll && roll.dice ? roll.dice : [],
+      bonus: roll && roll.bonus ? roll.bonus : 0,
       total: total,
       label: label || "",
-      at: Date.now()
+      at: Date.now(),
+      ms: ms
     };
     persist();
   }

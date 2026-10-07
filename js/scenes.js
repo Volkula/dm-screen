@@ -458,6 +458,7 @@
     person.damage = npc.damage || "";
     person.hp = Number(npc.hp) || 0;
     person.hpMax = Number(npc.hpMax) || Number(npc.hp) || 0;
+    person.origin = npc.origin || "";
     return person;
   }
 
@@ -470,6 +471,7 @@
     next.hp = Number(person.hp) || 0;
     next.hpMax = Number(person.hpMax) || 0;
     next.boss = Boolean(person.boss);
+    next.origin = person.origin || "";
     return next;
   }
 
@@ -594,7 +596,8 @@
   function tokenHtml(person, active) {
     const side = person.side === "npc" ? "npc" : "player";
     const actions = side === "player" ? actionPips(person.actions || 0) : "";
-    return '<button type="button" class="battle-token ' + side + (active ? " active" : "") + (person.dead ? " dead" : "") + '" data-actor-id="' + esc(person.id) + '">' +
+    const beast = side === "npc" ? beastAttr(person.origin || person.name) : "";
+    return '<button type="button" class="battle-token ' + side + (active ? " active" : "") + (person.dead ? " dead" : "") + '" data-actor-id="' + esc(person.id) + '"' + beast + '>' +
       '<span class="battle-face">' + battlePortrait(person) +
       '<span class="battle-mark ' + side + '" title="' + (side === "npc" ? "Непись" : "Игрок") + '">' + icon(side) + "</span></span>" +
       (actions ? '<span class="battle-actions">' + actions + "</span>" : "") +
@@ -653,24 +656,28 @@
   function rollFormula(text) {
     const src = String(text || "").replace(/\s+/g, "").replace(/[−–—]/g, "-");
     if (!src) return null;
-    const re = /([+-]?)(\d*)d(\d+)|([+-]?\d+)/gi;
-    let total = 0;
+    const re = /([+-]?)(\d*)([dдДкКkr])(\d*)|([+-]?\d+)/g;
+    const dice = [];
+    let bonus = 0;
     let saw = false;
     let match;
     while ((match = re.exec(src))) {
       saw = true;
       if (match[3]) {
         const sign = match[1] === "-" ? -1 : 1;
-        const count = Math.min(40, Math.max(1, Number(match[2] || "1")));
-        const sides = Math.min(100, Math.max(1, Number(match[3])));
-        let sum = 0;
-        for (let i = 0; i < count; i++) sum += 1 + Math.floor(Math.random() * sides);
-        total += sign * sum;
+        const count = Math.min(12, Math.max(1, Number(match[2] || "1")));
+        const sides = Math.min(100, Math.max(2, Number(match[4] || "6")));
+        for (let i = 0; i < count; i++) {
+          dice.push({ sides: sides, value: 1 + Math.floor(Math.random() * sides), sign: sign });
+        }
       } else {
-        total += Number(match[4]);
+        bonus += Number(match[5]);
       }
     }
-    return saw ? total : null;
+    if (!saw) return null;
+    let total = bonus;
+    dice.forEach(function (die) { total += die.sign * die.value; });
+    return { total: total, dice: dice, bonus: bonus };
   }
 
   function renderPlay(root, page, act) {
@@ -1381,7 +1388,7 @@
       '<td><div class="side-pick">' +
       '<button type="button" class="side-btn' + (side === "player" ? " is-on" : "") + '" data-side-set="player" data-i="' + index + '" title="Игрок">' + icon("player") + "</button>" +
       '<button type="button" class="side-btn' + (side === "npc" ? " is-on" : "") + '" data-side-set="npc" data-i="' + index + '" title="Непись">' + icon("npc") + "</button></div></td>" +
-      '<td><input data-actor="name" data-i="' + index + '" value="' + esc(person.name) + '" aria-label="Имя"></td>' +
+      '<td><input data-actor="name" data-i="' + index + '"' + (side === "npc" ? beastAttr(person.origin || person.name) : "") + ' value="' + esc(person.name) + '" aria-label="Имя"></td>' +
       "<td>" + weapon + "</td><td>" + damage + "</td><td>" + hp + "</td>" +
       "<td>" + fileBtn('data-photo="' + index + '"', "portrait", "Портрет", Boolean(safeSrc(person.portrait)), "image/*", "photo:" + index) + "</td>" +
       "<td>" + fileBtn('data-picture="' + index + '"', "shot", "Боевой облик", Boolean(safeSrc(person.picture)), "image/*", "shot:" + index) + "</td>" +
@@ -1410,6 +1417,7 @@
       '<div class="row"><button type="button" data-add>Добавить</button>' +
       '<button type="button" data-sep-add title="Полоса только в очереди мастера">Разделитель</button>' +
       '<button type="button" data-pick-codex>Из справочника</button>' +
+      '<button type="button" data-monsters>Монстры</button>' +
       '<button type="button" class="primary" data-next>Следующий ход</button></div></div>' +
       sidePanel(scene, "initiative") + "</div>";
     bindInit(root, page, onChange);
@@ -1427,10 +1435,13 @@
     const query = pop.querySelector("#pick-q");
     function paint() {
       const q = query.value.trim().toLowerCase();
-      const hits = rows.filter(function (row) { return !q || String(row.label).toLowerCase().indexOf(q) >= 0; }).slice(0, 60);
+      const hits = rows.filter(function (row) {
+        if (!q) return true;
+        return (String(row.label) + " " + (row.q || "")).toLowerCase().indexOf(q) >= 0;
+      }).slice(0, 60);
       const list = pop.querySelector("#pick-list");
       list.innerHTML = hits.map(function (row, index) {
-        return '<button type="button" class="pick-row" data-pick-i="' + index + '">' + esc(row.label) + "</button>";
+        return '<button type="button" class="pick-row" data-pick-i="' + index + '"' + beastAttr(row.beast || row.label) + '>' + esc(row.label) + "</button>";
       }).join("") || '<p class="scene-note">Пусто</p>';
       list.onclick = function (event) {
         const button = event.target.closest("[data-pick-i]");
@@ -1560,15 +1571,15 @@
       button.addEventListener("click", function () {
         const person = scene.actors[Number(button.getAttribute("data-i"))];
         if (!person) return;
-        const total = rollFormula(person.damage);
-        if (total == null) {
-          button.title = "Нужна формула, например 1d8+2";
+        const roll = rollFormula(person.damage);
+        if (!roll || !roll.dice.length) {
+          button.title = "Нужна формула, например 2к6+2";
           return;
         }
         const name = person.name || "Непись";
         const weapon = person.weapon && String(person.weapon).trim();
-        button.title = "Урон " + total;
-        publishHit(total, weapon ? name + " · " + weapon : name);
+        button.title = "Урон " + roll.total;
+        publishHit(roll, weapon ? name + " · " + weapon : name);
         onChange();
       });
     });
@@ -1628,6 +1639,16 @@
         mountInit(root, page, onChange);
       });
     });
+    const fromMonsters = root.querySelector("[data-monsters]");
+    if (fromMonsters) {
+      fromMonsters.addEventListener("click", function () {
+        openMonsters(function (npc) {
+          putInFight(npc);
+          onChange();
+          if (root.isConnected) mountInit(root, page, onChange);
+        });
+      });
+    }
     const fromCodex = root.querySelector("[data-pick-codex]");
     if (fromCodex) {
       fromCodex.addEventListener("click", function () {
@@ -1933,6 +1954,26 @@
     return "";
   }
 
+  function monsterCards() {
+    const lib = window.ShirmoLibrary;
+    const rows = (lib && lib.monsters) || [];
+    const cards = rows.map(function (row) {
+      const ru = ruOf("monsters", row[0]);
+      const name = ru || row[0];
+      const cr = row[3] !== "" && row[3] != null ? "CR " + row[3] : "";
+      return { label: cr ? name + " · " + cr : name, q: name + " " + row[0], row: row, ru: Boolean(ru), beast: row[0] };
+    });
+    cards.sort(function (a, b) {
+      if (a.ru !== b.ru) return a.ru ? -1 : 1;
+      return a.label.localeCompare(b.label, "ru");
+    });
+    return cards;
+  }
+
+  function openMonsters(onPick) {
+    openList("Монстры", monsterCards(), function (card) { onPick(npcFromMonster(card.row)); });
+  }
+
   function paintLibrary(root) {
     const box = root.querySelector("#lib-results");
     if (!box) return;
@@ -1943,7 +1984,8 @@
       return;
     }
     const query = libQuery.trim().toLowerCase();
-    if (query.length < 2) {
+    const browsing = libKind === "monsters" && query.length < 2;
+    if (query.length < 2 && !browsing) {
       libHits = [];
       box.innerHTML = "";
       return;
@@ -1954,13 +1996,23 @@
     for (let i = 0; i < rows.length; i++) {
       const ruName = ruOf(libKind, rows[i][0]);
       if (libKind === "items" && !ruName) continue;
+      if (browsing && !ruName) continue;
       const en = String(rows[i][0]).toLowerCase();
       const ru = ruName.toLowerCase();
-      const at = en.indexOf(query);
-      const atRu = ru.indexOf(query);
-      if (at < 0 && atRu < 0) continue;
-      if (at === 0 || atRu === 0) starts.push(rows[i]);
-      else contains.push(rows[i]);
+      if (!browsing) {
+        const at = en.indexOf(query);
+        const atRu = ru.indexOf(query);
+        if (at < 0 && atRu < 0) continue;
+        if (at === 0 || atRu === 0) starts.push(rows[i]);
+        else contains.push(rows[i]);
+      } else {
+        starts.push(rows[i]);
+      }
+    }
+    if (browsing) {
+      starts.sort(function (a, b) {
+        return ruOf("monsters", a[0]).localeCompare(ruOf("monsters", b[0]), "ru");
+      });
     }
     const hits = starts.concat(contains).slice(0, 40);
     const more = starts.length + contains.length > 40;
@@ -1970,10 +2022,12 @@
       const ru = ruOf(libKind, row[0]);
       const title = ru || row[0];
       const meta = libMeta(libKind, row);
-      return '<div class="lib-row"><b>' + esc(title) + '</b><span class="lib-meta">' + esc(meta) + "</span>" +
+      return '<div class="lib-row"' + (libKind === "monsters" ? beastAttr(row[0]) : "") + '><b>' + esc(title) + '</b><span class="lib-meta">' + esc(meta) + "</span>" +
         (actions ? '<span class="lib-actions">' + actions + "</span>" : "<span></span>") + "</div>";
     }).join("");
-    const tail = more ? '<p class="scene-note">Показаны первые 40. Уточните запрос.</p>' : (hits.length ? "" : '<p class="scene-note">Ничего не найдено.</p>');
+    const tail = more
+      ? '<p class="scene-note">' + (browsing ? "Первые 40. Введите имя, чтобы найти остальных." : "Показаны первые 40. Уточните запрос.") + "</p>"
+      : (hits.length ? "" : '<p class="scene-note">Ничего не найдено.</p>');
     box.innerHTML = html + tail;
   }
 
@@ -2018,7 +2072,8 @@
       weapon: row[6] || "",
       damage: row[7] || "",
       hp: hp,
-      hpMax: hp
+      hpMax: hp,
+      origin: row[0]
     };
   }
 
@@ -2051,7 +2106,8 @@
       weapon: npc.weapon || "",
       damage: npc.damage || "",
       hp: Number(npc.hp) || 0,
-      hpMax: Number(npc.hpMax) || Number(npc.hp) || 0
+      hpMax: Number(npc.hpMax) || Number(npc.hp) || 0,
+      origin: npc.origin || ""
     });
   }
 
@@ -2068,6 +2124,7 @@
     person.damage = source.damage || "";
     person.hp = Number(source.hp) || 0;
     person.hpMax = Number(source.hpMax) || Number(source.hp) || 0;
+    person.origin = source.origin || "";
     placeOf(scene).npcs.push(person);
     scene.npcId = person.id;
     scene.npcName = person.name;
@@ -2085,6 +2142,7 @@
     person.damage = npc.damage || "";
     person.hp = Number(npc.hp) || 0;
     person.hpMax = Number(npc.hpMax) || 0;
+    person.origin = npc.origin || "";
     scene.actors.push(person);
     ensureLayout(scene);
     if (scene.autoSort) sortLayout(scene);
@@ -2107,6 +2165,7 @@
     person.damage = source.damage || "";
     person.hp = Number(source.hp) || 0;
     person.hpMax = Number(source.hpMax) || Number(source.hp) || 0;
+    person.origin = source.origin || "";
     person.peaceful = Boolean(peaceful);
     if (!person.peaceful) person.party = [npcActor(person)];
     place.npcs = place.npcs || [];
@@ -2149,7 +2208,7 @@
     if (!placeById(placeFocus)) placeFocus = (childrenOf("")[0] || places[0]).id;
     const place = placeById(placeFocus);
     const stationed = (place.npcs || []).map(function (npc, index) {
-      return '<div class="pick-line"><span class="pick-row">' + esc(npc.name || "Непись") + (npc.peaceful ? "" : " · враг") +
+      return '<div class="pick-line"><span class="pick-row"' + beastAttr(npc.origin || npc.name) + '>' + esc(npc.name || "Непись") + (npc.peaceful ? "" : " · враг") +
         '</span><button type="button" class="danger" data-place-npc-del="' + index + '">×</button></div>';
     }).join("") || '<p class="scene-note">На месте никого нет.</p>';
     const options = (catalog.npcs || []).map(function (npc, index) {
@@ -2161,7 +2220,7 @@
       '<div class="scene-field"><span>Фон</span>' + fileBtn("data-place-bg", "image", "Фон", Boolean(safeSrc(place.background)), "image/*", "place-bg") + "</div>" +
       '<div class="queue-label"><b>На месте</b></div>' + stationed +
       '<div class="row"><select data-place-from aria-label="Персонаж"><option value="">Из персонажей</option>' + options + '</select><button type="button" data-place-put>На место</button><button type="button" data-place-enemy>Как враг</button></div>' +
-      '<div class="row"><input data-place-new placeholder="Имя" aria-label="Новый персонаж"><button type="button" data-place-create>Персонаж</button><button type="button" data-place-hostile>Враг</button></div>';
+      '<div class="row"><input data-place-new placeholder="Имя" aria-label="Новый персонаж"><button type="button" data-place-create>Персонаж</button><button type="button" data-place-hostile>Враг</button><button type="button" data-place-monsters>Монстры</button></div>';
   }
 
   function remountCodex(root, onChange) {
@@ -2178,7 +2237,7 @@
     const npcs = (book.npcs || []).map(function (npc, index) {
       const face = safeSrc(npc.portrait);
       return '<tr><td>' + (face ? '<img class="codex-face" alt="" src="' + esc(face) + '">' : "") +
-        '<input data-codex-npc="name" data-i="' + index + '" value="' + esc(npc.name || "") + '" aria-label="Имя"></td>' +
+        '<input data-codex-npc="name" data-i="' + index + '"' + beastAttr(npc.origin || npc.name) + ' value="' + esc(npc.name || "") + '" aria-label="Имя"></td>' +
         '<td><input data-codex-npc="note" data-i="' + index + '" value="' + esc(npc.note || "") + '" aria-label="Заметка"></td>' +
         '<td><input data-codex-npc="weapon" data-i="' + index + '" value="' + esc(npc.weapon || "") + '" aria-label="Оружие"></td>' +
         '<td><input data-codex-npc="damage" data-i="' + index + '" value="' + esc(npc.damage || "") + '" aria-label="Урон"></td>' +
@@ -2206,13 +2265,13 @@
         '<td><input class="num" data-codex-coin="copper" data-i="' + index + '" type="number" min="1" value="' + esc(coin.copper || 1) + '" aria-label="Медных в монете"></td>' +
         '<td><button type="button" class="danger" data-coin-del="' + index + '">×</button></td></tr>';
     }).join("");
-    const kinds = [["items", "Предметы"], ["monsters", "Бестиарий"], ["spells", "Заклинания"], ["classes", "Классы"], ["species", "Виды"], ["backgrounds", "Предыстории"]];
+    const kinds = [["items", "Предметы"], ["monsters", "Монстры"], ["spells", "Заклинания"], ["classes", "Классы"], ["species", "Виды"], ["backgrounds", "Предыстории"]];
     const kindChips = kinds.map(function (kind) {
       return '<button type="button" class="chip-btn' + (libKind === kind[0] ? " is-on" : "") + '" data-lib-kind="' + kind[0] + '">' + kind[1] + "</button>";
     }).join("");
     const panes = {
       base: '<div class="chip-row">' + kindChips + '</div><input id="lib-q" value="' + esc(libQuery) + '" placeholder="Поиск по имени, можно по-русски" aria-label="Поиск по базе"><div id="lib-results"></div>',
-      npcs: '<div class="row"><input id="new-npc-name" placeholder="Бандит" aria-label="Имя"><label class="check"><input type="checkbox" id="own-name"' + (ownName ? " checked" : "") + '> Своё имя</label><button type="button" data-gen-new>Сгенерировать</button><button type="button" data-npc-add>Добавить</button>' +
+      npcs: '<div class="row"><input id="new-npc-name" placeholder="Бандит" aria-label="Имя"><label class="check"><input type="checkbox" id="own-name"' + (ownName ? " checked" : "") + '> Своё имя</label><button type="button" data-gen-new>Сгенерировать</button><button type="button" data-npc-add>Добавить</button><button type="button" data-monsters>Монстры</button>' +
         '<button type="button" data-csv-open="npcs" title="Поля, шаблон, выгрузка и загрузка">CSV</button></div>' +
         nameChips() +
         '<table class="cast"><thead><tr><th>Имя</th><th>Заметка</th><th>Оружие</th><th>Урон</th><th>ХП</th><th>Макс</th><th></th><th></th><th></th><th></th><th></th></tr></thead><tbody>' +
@@ -2367,6 +2426,23 @@
       catalog.npcs.push({ id: freshId(), name: chosenName(input && input.value), note: "", portrait: "", picture: "", weapon: "", damage: "", hp: 0, hpMax: 0 });
       onChange();
       mountCodex(root, onChange);
+    });
+    const fromMonsters = root.querySelector("[data-monsters]");
+    if (fromMonsters) fromMonsters.addEventListener("click", function () {
+      openMonsters(function (npc) {
+        rememberNpc(npc);
+        onChange();
+        remountCodex(root, onChange);
+      });
+    });
+    const placeMonsters = root.querySelector("[data-place-monsters]");
+    if (placeMonsters) placeMonsters.addEventListener("click", function () {
+      openMonsters(function (npc) {
+        rememberNpc(npc);
+        copyOntoPlace(npc, false);
+        onChange();
+        remountCodex(root, onChange);
+      });
     });
     const addGood = root.querySelector("[data-good-add]");
     if (addGood) addGood.addEventListener("click", function () {
@@ -2782,9 +2858,134 @@
     return (list || []).find(function (item) { return String(item.name || "").trim().toLowerCase() === key; });
   }
 
+  function beastAttr(name) {
+    const key = String(name || "").trim();
+    if (!key) return "";
+    return ' data-beast="' + esc(key) + '"';
+  }
+
+  const BEAST_SIZE = {
+    tiny: "крошечный",
+    small: "маленький",
+    medium: "средний",
+    large: "большой",
+    huge: "огромный",
+    gargantuan: "громадный"
+  };
+
+  let beastMap = null;
+
+  function beastScore(row) {
+    return (row[6] ? 4 : 0) + (Number(row[5]) ? 2 : 0) + (monsterFace(row[0]) ? 1 : 0);
+  }
+
+  function beastByName(name) {
+    const key = String(name || "").trim().toLowerCase();
+    if (!key) return null;
+    if (!beastMap) {
+      beastMap = {};
+      const rows = (window.ShirmoLibrary && ShirmoLibrary.monsters) || [];
+      rows.forEach(function (row) {
+        const en = String(row[0] || "").toLowerCase();
+        const ru = String(ruOf("monsters", row[0]) || "").toLowerCase();
+        [en, ru].forEach(function (id) {
+          if (!id) return;
+          const prev = beastMap[id];
+          if (!prev || beastScore(row) > beastScore(prev)) beastMap[id] = row;
+        });
+      });
+    }
+    return beastMap[key] || null;
+  }
+
+  function beastCard(row) {
+    const extra = window.ShirmoRu && ShirmoRu.monsters[String(row[0]).toLowerCase()];
+    const name = (extra && extra[0]) || row[0];
+    const size = BEAST_SIZE[String(row[1] || "").toLowerCase()] || "";
+    const type = (extra && extra[4]) || row[2] || "";
+    const cr = row[3] !== "" && row[3] != null ? row[3] : (extra && extra[1]) || "";
+    const ac = Number(row[4]) || (extra && extra[2]) || 0;
+    const hp = Number(row[5]) || (extra && extra[3]) || 0;
+    const face = safeSrc(monsterFace(row[0]));
+    const lines = [];
+    if (size || type) lines.push(esc([size, type].filter(Boolean).join(", ")));
+    const stats = [];
+    if (cr !== "" && cr != null) stats.push("CR " + cr);
+    if (ac) stats.push("AC " + ac);
+    if (hp) stats.push("HP " + hp);
+    if (stats.length) lines.push(esc(stats.join(" · ")));
+    if (row[6] || row[7]) lines.push(esc([row[6], row[7]].filter(Boolean).join(" · ")));
+    const book = libBook(row[8]);
+    if (book) lines.push('<i class="beast-book">' + esc(book) + "</i>");
+    return (face ? '<img alt="" src="' + esc(face) + '">' : "") +
+      '<div class="beast-copy"><b>' + esc(name) + "</b>" +
+      lines.map(function (line) { return "<span>" + line + "</span>"; }).join("") + "</div>";
+  }
+
+  function beastTipEl() {
+    let tip = document.getElementById("beast-tip");
+    if (!tip) {
+      tip = document.createElement("div");
+    tip.id = "beast-tip";
+    tip.className = "beast-tip hidden";
+    tip.style.pointerEvents = "none";
+      document.body.appendChild(tip);
+    }
+    return tip;
+  }
+
+  function hideBeast() {
+    const tip = document.getElementById("beast-tip");
+    if (tip) tip.classList.add("hidden");
+  }
+
+  function placeBeast(tip, node) {
+    const box = node.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    let left = box.right + 10;
+    if (left + width > window.innerWidth - 8) left = box.left - width - 10;
+    if (left < 8) left = 8;
+    let top = box.top;
+    if (top + height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - height - 8);
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+
+  function bindBeastTip() {
+    if (location.search.indexOf("view=play") >= 0) return;
+    document.addEventListener("mouseover", function (event) {
+      const node = event.target.closest("[data-beast]");
+      if (!node || !node.isConnected) {
+        hideBeast();
+        return;
+      }
+      const row = beastByName(node.getAttribute("data-beast"));
+      if (!row) {
+        hideBeast();
+        return;
+      }
+      const tip = beastTipEl();
+      tip.innerHTML = beastCard(row);
+      tip.classList.remove("hidden");
+      placeBeast(tip, node);
+    });
+    document.addEventListener("pointerdown", function () { hideBeast(); });
+    document.addEventListener("mouseout", function (event) {
+      const node = event.target.closest("[data-beast]");
+      if (!node) return;
+      const next = event.relatedTarget;
+      if (next && node.contains(next)) return;
+      hideBeast();
+    });
+    document.addEventListener("scroll", hideBeast, true);
+  }
+
   function setRoll(fn) { publishRoll = fn || function () {}; }
 
   function setHit(fn) { publishHit = fn || function () {}; }
+
+  bindBeastTip();
 
   window.ShirmoScenes = {
     mount: mount,
